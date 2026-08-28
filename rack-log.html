@@ -10,6 +10,9 @@
   --line:#DCDFE5; --line-2:#C8CCD4;
   --accent:#C8372A; --on-accent:#FFFFFF; --on-chip:#FFFFFF;
   --push:#C8372A; --pull:#2C5FBF; --legs:#8F6714; --cardio:#2E7D4F; --other:#5B6472;
+  /* people, deliberately off the bumper-plate hues so a person's disc is never
+     mistaken for a split colour */
+  --p1:#6B5B95; --p2:#2F7C82; --p3:#8A4A6B;
   --shadow:0 1px 2px rgba(22,24,29,.06),0 8px 24px rgba(22,24,29,.07);
 }
 @media (prefers-color-scheme:dark){
@@ -20,6 +23,7 @@
     --line:#2A2F38; --line-2:#39404B;
     --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
     --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+    --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
   }
 }
@@ -30,6 +34,7 @@
   --line:#2A2F38; --line-2:#39404B;
   --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
   --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+  --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
@@ -98,6 +103,29 @@ button.card:active{transform:scale(.995)}
 .exline{display:flex;justify-content:space-between;gap:12px;font-size:14px}
 .exline b{font-weight:500;color:var(--ink)}
 .exline span{color:var(--ink-3);font-size:13px;white-space:nowrap}
+
+/* crew feed: Mine/Crew switch, and the person on a shared card */
+.seg{display:flex;gap:3px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:11px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;padding:8px 4px;border-radius:8px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.09em;font-size:13px;color:var(--ink-3)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);
+  box-shadow:0 1px 2px rgba(10,11,14,.13)}
+.who{display:flex;align-items:center;gap:9px;min-width:0}
+.avatar{width:32px;height:32px;flex:none;border-radius:50%;background:var(--p);
+  color:var(--on-chip);display:flex;align-items:center;justify-content:center;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;letter-spacing:.03em}
+.who .nm{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:18px;
+  text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .you{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);flex:none;
+  border:1px solid var(--line-2);border-radius:3px;padding:1px 4px}
+/* you are not one of the colours: an ink disc can't be mistaken for a split
+   the way an accent-red one reads as Push */
+[data-person="me"]{--p:var(--ink)}
+[data-person="p1"]{--p:var(--p1)}
+[data-person="p2"]{--p:var(--p2)}
+[data-person="p3"]{--p:var(--p3)}
 
 .bar{flex:none;position:sticky;bottom:0;z-index:4;
   border-top:1px solid var(--line);background:var(--surface);
@@ -347,6 +375,45 @@ var EXTRA = {
   other:["Plank","Side Plank","Ab Wheel","Hanging Leg Raise","Cable Crunch",
          "Russian Twist","Sit Up","Pallof Press","Back Extension"]
 };
+/* ---------- crew ----------
+   Prototype data only. Nothing here is shared for real: the feed is seeded
+   locally so the layout can be judged. Real sharing needs the `artifact`
+   capability (the page republishes itself with the feed embedded) -- see
+   "Sharing" in HANDOFF.md for what that does and does not buy. */
+var ME={id:"me",name:"Mark Miller",person:"me"};
+var CREW=[
+  {id:"danny",name:"Danny Ruiz",person:"p1"},
+  {id:"sam",name:"Sam Okonkwo",person:"p2"},
+  {id:"tess",name:"Tess Lindqvist",person:"p3"}
+];
+/* Shared sessions carry the same shape as your own, plus `who`. */
+var FEED=[
+ {who:"danny",date:"2026-08-27",split:"push",ex:[
+   {name:"Barbell Bench Press",sets:[[10,155],[8,175],[5,195],[8,175]]},
+   {name:"Overhead Press",sets:[[10,95],[8,105],[6,115]]},
+   {name:"Cable Fly",sets:[[12,40],[12,45],[10,50]]},
+   {name:"Skullcrusher",sets:[[12,65],[10,75],[8,85]]}]},
+ {who:"tess",date:"2026-08-27",split:"cardio",ex:[
+   {name:"Treadmill Run",kind:"tread",sets:[[28,6.2,1]]},
+   {name:"Rower",kind:"machine",sets:[[15,7]]}]},
+ {who:"sam",date:"2026-08-26",split:"legs",ex:[
+   {name:"Leg Press",sets:[[12,270],[10,320],[8,360],[8,360]]},
+   {name:"Romanian Deadlift",sets:[[10,155],[10,175],[8,185]]},
+   {name:"Walking Lunge",sets:[[12,40],[12,40],[10,50]]},
+   {name:"Seated Calf Raise",sets:[[15,90],[15,110],[12,130]]}]},
+ {who:"danny",date:"2026-08-24",split:"pull",ex:[
+   {name:"Deadlift",sets:[[5,275],[3,315],[1,345]]},
+   {name:"Barbell Row",sets:[[10,135],[10,145],[8,155]]},
+   {name:"Hammer Curl",sets:[[12,30],[10,35],[8,40]]}]},
+ {who:"sam",date:"2026-08-23",split:"pull",ex:[
+   {name:"Chest Supported Row",sets:[[12,90],[12,100],[10,110]]},
+   {name:"Face Pull",sets:[[15,40],[15,45],[15,50]]},
+   {name:"Cable Curl",sets:[[12,50],[12,60],[10,70]]}]},
+ {who:"tess",date:"2026-08-22",split:"legs",ex:[
+   {name:"Goblet Squat",sets:[[12,50],[12,60],[10,70]]},
+   {name:"Hip Thrust",sets:[[12,185],[12,205],[10,225]]},
+   {name:"Leg Extension",sets:[[15,70],[15,85],[12,100]]}]}
+];
 var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
   legs:"Legs movements",other:"Core &amp; other"};
 var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["cardio","Cardio"],["other","Other"]];
@@ -358,8 +425,9 @@ var KEY="racklog.proto.v2", S=null;
 try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
 if(!S||!S.sessions) S={sessions:SEED.slice(),live:null,tab:"history"};
 if(!S.month) S.month=TODAY.slice(0,7);
-/* the calendar is home: every launch opens there, whatever tab you left on */
-S.tab="history";
+/* the calendar is home: every launch opens there, whatever tab you left on,
+   and on Mine rather than the crew feed */
+S.tab="history"; S.home="mine";
 var view={name:"home"};
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
 
@@ -415,6 +483,19 @@ function inMonth(m){return sorted().filter(function(s){return ym(s.date)===m;});
 function earliestMonth(){
   var ms=S.sessions.map(function(s){return ym(s.date);}).sort();
   return ms.length?ms[0]:ym(TODAY);}
+
+/* ---------- crew helpers ---------- */
+function personOf(id){
+  if(id===ME.id) return ME;
+  return CREW.filter(function(c){return c.id===id;})[0] || {id:id,name:id,person:"p1"};}
+function initials(n){
+  return n.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join("").toUpperCase();}
+function firstName(n){return n.split(/\s+/)[0];}
+/* your shared sessions and the crew's, newest first */
+function crewFeed(){
+  var mine=S.sessions.filter(function(s){return s.shared;}).map(function(s){
+    return {who:ME.id,date:s.date,split:s.split,ex:s.ex,sid:s.id};});
+  return FEED.concat(mine).sort(function(a,b){return b.date.localeCompare(a.date);});}
 
 /* one session's totals, split by kind */
 function totals(s){var v=0,mins=0,nsets=0,hasCardio=false,hasLift=false;
@@ -488,11 +569,43 @@ function calendar(){
       (mins?'<div><b>'+mins+'</b>min cardio</div>':'')+'</div></div>';
 }
 
+/* A shared session, as the crew sees it: the same card the calendar screen
+   uses, with the person's disc where your own card carries the date. It is a
+   div, not a button -- the whole session is already on the card, so there is
+   nothing to open. */
+function crewHTML(){
+  var items=crewFeed();
+  if(!items.length) return '<div class="empty">Nothing shared yet.<br>'+
+    'Open a finished workout and tap Share to crew.</div>';
+  return '<div class="list">'+items.map(function(s){
+    var p=personOf(s.who), t=totals(s), parts=[ago(s.date), s.ex.length+" exercises"];
+    if(t.hasLift) parts.push(t.sets+" sets",
+      '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
+    if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
+    return '<div class="card" data-split="'+s.split+'">'+
+      '<div class="rowbetween"><div class="who" data-person="'+p.person+'">'+
+        '<span class="avatar">'+esc(initials(p.name))+'</span>'+
+        '<span class="nm">'+esc(firstName(p.name))+'</span>'+
+        (s.who===ME.id?'<span class="you">You</span>':'')+
+      '</div><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
+      '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
+      '<div class="exlist">'+s.ex.map(function(x){
+        return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+
+          exSummary(kindOf(x),x.sets)+'</span></div>';
+      }).join("")+'</div></div>';}).join("")+'</div>';
+}
+
 function renderHome(){
   var body;
   if(S.tab==="history"){
+    /* Mine/Crew shares the home slot, so the calendar stays the landing view
+       and the bottom nav keeps its three targets */
+    var seg='<div class="seg">'+
+      '<button aria-pressed="'+(S.home==="mine")+'" onclick="setHome(\'mine\')">Mine</button>'+
+      '<button aria-pressed="'+(S.home==="crew")+'" onclick="setHome(\'crew\')">Crew</button></div>';
+    if(S.home==="crew") return renderHomeShell(seg+crewHTML());
     var ss=inMonth(S.month);
-    body = calendar() + (ss.length ? '<div class="list">'+ss.map(function(s){
+    body = seg + calendar() + (ss.length ? '<div class="list">'+ss.map(function(s){
       var t=totals(s), parts=[ago(s.date), s.ex.length+" exercises"];
       if(t.hasLift) parts.push(t.sets+" sets", '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
       if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
@@ -515,6 +628,9 @@ function renderHome(){
         '<div class="sessionmeta">'+ago(e.last)+' &middot; '+e.n+' session'+(e.n>1?'s':'')+
         ' &middot; '+meta+'</div></button>';}).join("")+'</div>';
   }
+  return renderHomeShell(body);
+}
+function renderHomeShell(body){
   V.innerHTML='<header><div><div class="eyebrow">'+
     (S.live?'Workout in progress':dstr(TODAY,true))+'</div><h1>'+
     (S.tab==="history"?"Rack Log":"Exercises")+'</h1></div></header>'+scroll(body);
@@ -601,7 +717,9 @@ function renderSession(){
 
   V.innerHTML='<header><button class="back" onclick="goHome()">&lsaquo; Rack Log</button>'+
     (live?'<button class="back" onclick="askCancel()">Cancel workout</button>'
-     :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>':'')+
+     :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>'
+     :'<button class="back" onclick="toggleShare()">'+
+        (s.shared?'&check; Shared':'Share to crew')+'</button>')+
     '</header>'+scroll(head+cards+empty);
   BAR.innerHTML = live
     ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
@@ -715,6 +833,16 @@ function barChart(pts){
 
 /* ---------- actions ---------- */
 function setTab(t){S.tab=t;view={name:"home"};save();render();}
+function setHome(v){S.home=v;view={name:"home"};save();render();}
+/* Sharing is explicit and per-session: a workout you never share stays yours.
+   Prototype only -- this flips a flag the local feed reads, it does not
+   publish anything to anyone. */
+function toggleShare(){
+  var s=S.sessions.filter(function(x){return x.id===view.id;})[0];
+  if(!s) return;
+  if(s.shared) delete s.shared; else s.shared=true;
+  save(); render();
+}
 function setMonth(n){S.month=shiftMonth(S.month,n);save();render();}
 /* home always means the calendar, never whichever tab was last open */
 function goHome(){S.tab="history";view={name:"home"};save();render();}

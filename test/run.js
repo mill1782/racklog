@@ -246,5 +246,52 @@ ok("an empty workout says nothing is lost",
    els.dialog.innerHTML.indexOf("Nothing is logged yet") >= 0);
 sandbox.dialogYes();
 
+/* ---- 9. the crew feed ---- */
+group("Crew feed");
+sandbox.S.live = null;
+sandbox.goHome();
+eq("home lands on Mine, not the feed", S().home, "mine");
+ok("the Mine/Crew switch is on the home screen",
+   viewHTML().indexOf("setHome('crew')") >= 0 && viewHTML().indexOf("calgrid") >= 0);
+sandbox.setHome("crew");
+eq("Crew keeps the calendar's home identity", screen(), "home/calendar");
+ok("the calendar is replaced, not stacked", viewHTML().indexOf("calgrid") < 0);
+ok("the switch is still reachable", viewHTML().indexOf("setHome('mine')") >= 0);
+ok("bottom nav is untouched by the feed",
+   barHTML().indexOf("setTab('history')") >= 0 && barHTML().indexOf("startWorkout()") >= 0);
+eq("every seeded crew session renders",
+   (viewHTML().match(/class="avatar"/g) || []).length, sandbox.FEED.length);
+ok("cards carry the full exercise list", viewHTML().indexOf("Barbell Bench Press") >= 0 &&
+   viewHTML().indexOf("Romanian Deadlift") >= 0);
+ok("a person gets initials, not a bare name", viewHTML().indexOf(">DR<") >= 0);
+ok("each person keeps their own colour",
+   viewHTML().indexOf('data-person="p1"') >= 0 && viewHTML().indexOf('data-person="p2"') >= 0);
+ok("cardio in the feed reads as time, not weight",
+   viewHTML().indexOf("min cardio") >= 0);
+ok("crew cards are not buttons",
+   viewHTML().indexOf('<button class="card"') < 0);
+
+/* sharing is opt-in and per session */
+group("Sharing a session");
+const feedCount = () => (viewHTML().match(/class="avatar"/g) || []).length;
+sandbox.setHome("mine");
+sandbox.openSession("s3");
+ok("a finished session offers Share", viewHTML().indexOf("toggleShare()") >= 0);
+ok("nothing is shared by default", S().sessions.every(x => x.shared === undefined));
+sandbox.toggleShare();
+eq("sharing flags that session", S().sessions.filter(x => x.id === "s3")[0].shared, true);
+ok("the button flips to Shared", viewHTML().indexOf("Shared") >= 0);
+sandbox.goHome(); sandbox.setHome("crew");
+eq("a shared session joins the feed", feedCount(), sandbox.FEED.length + 1);
+ok("your own entry is marked", viewHTML().indexOf('data-person="me"') >= 0 &&
+   viewHTML().indexOf(">You<") >= 0);
+ok("the feed is in date order",
+   viewHTML().indexOf("Danny") < viewHTML().indexOf("Sam"));
+sandbox.openSession("s3"); sandbox.toggleShare();
+ok("unsharing removes it again", S().sessions.filter(x => x.id === "s3")[0].shared === undefined);
+sandbox.goHome(); sandbox.setHome("crew");
+eq("feed is back to the crew's own", feedCount(), sandbox.FEED.length);
+sandbox.setHome("mine");
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
