@@ -1,0 +1,14 @@
+# OS / editor cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Excel lock files (created while the spreadsheet is open)
+~$*.xlsx
+
+# Node (none committed today; here for when the prototype grows a toolchain)
+node_modules/
+npm-debug.log*
