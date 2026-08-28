@@ -33,6 +33,7 @@ const sandbox = {
   document: {
     getElementById: (id) => els[id] || (els[id] = mkEl()),
     querySelector: () => null,
+    addEventListener() {},
     body: { classList: { add() {}, remove() {} } }
   }
 };
@@ -165,6 +166,85 @@ sandbox.setTab("history");
 eq("nav reaches the calendar in one tap", screen(), "home/calendar");
 sandbox.openSession("s4"); sandbox.openExercise("Pec Fly"); sandbox.goBack();
 eq("chart opened from a session returns to it", screen(), "session");
+
+/* ---- 7. editing a finished session ---- */
+group("Editing a finished session");
+sandbox.S.live = null;
+const pushDay = () => S().sessions.filter(x => x.id === "s4")[0];
+sandbox.openSession("s4");
+ok("finished session opens read-only", barHTML().indexOf("editSession()") >= 0 &&
+   viewHTML().indexOf("delSet(") < 0 && viewHTML().indexOf("splitpick") < 0);
+sandbox.editSession();
+ok("Edit unlocks the live controls", viewHTML().indexOf("delSet(") >= 0 &&
+   viewHTML().indexOf("splitpick") >= 0 && viewHTML().indexOf("addSet(") >= 0);
+ok("edit mode offers Done, not Finish", barHTML().indexOf("doneEditing()") >= 0 &&
+   barHTML().indexOf("finish()") < 0);
+const flySets = pushDay().ex[3].sets.length;
+sandbox.delSet(3, 0);
+eq("a set can be deleted from a finished session", pushDay().ex[3].sets.length, flySets - 1);
+sandbox.document.getElementById("f3_0").value = 12;
+sandbox.document.getElementById("f3_1").value = 140;
+sandbox.addSet(3);
+eq("a set can be added to a finished session",
+   JSON.stringify(pushDay().ex[3].sets.slice(-1)), "[[12,140]]");
+sandbox.setSplit("legs");
+eq("a mis-filed split can be corrected", pushDay().split, "legs");
+sandbox.setSplit("push");
+const exCount = pushDay().ex.length;
+sandbox.pick("Cable Fly", "lift", "push");   /* left empty on purpose */
+sandbox.doneEditing();
+eq("empty exercise dropped on Done", pushDay().ex.length, exCount);
+ok("no drafts persist after Done", pushDay().ex.every(x => x.draft === undefined));
+eq("Done returns to the session", screen(), "session");
+ok("and it is read-only again", viewHTML().indexOf("delSet(") < 0);
+ok("the edit shows in the session", viewHTML().indexOf("140") >= 0);
+
+/* emptying a session out is how a day gets thrown away */
+const before = S().sessions.length;
+sandbox.openSession("s1"); sandbox.editSession();
+while (S().sessions.filter(x => x.id === "s1")[0].ex.length) sandbox.delEx(0);
+sandbox.doneEditing();
+eq("emptied session is deleted", S().sessions.length, before - 1);
+eq("deleting a session lands on the calendar", screen(), "home/calendar");
+
+/* a live workout and an edited session must not cross wires */
+sandbox.startWorkout(); sandbox.setSplit("pull");
+sandbox.openSession("s2"); sandbox.editSession();
+sandbox.pick("Shrug", "lift", "pull");
+sandbox.document.getElementById("f4_0").value = 12;
+sandbox.document.getElementById("f4_1").value = 95;
+sandbox.addSet(4);
+eq("edits miss the live workout", S().live.ex.length, 0);
+eq("edits land on the edited session",
+   JSON.stringify(S().sessions.filter(x => x.id === "s2")[0].ex[4].sets), "[[12,95]]");
+sandbox.doneEditing();
+
+/* ---- 8. cancelling a live workout ---- */
+group("Cancelling a workout");
+sandbox.resume();
+ok("a live workout offers Cancel", viewHTML().indexOf("askCancel()") >= 0);
+sandbox.pick("Deadlift", "lift", "pull");
+sandbox.document.getElementById("f0_0").value = 5;
+sandbox.document.getElementById("f0_1").value = 315;
+sandbox.addSet(0);
+const sessionsBefore = S().sessions.length;
+sandbox.askCancel();
+ok("cancelling asks first", sandbox.dlgOpen === true);
+ok("the prompt counts what is at stake",
+   els.dialog.innerHTML.indexOf("<b>1</b> set") >= 0);
+ok("both answers are offered", els.dialog.innerHTML.indexOf("Discard workout") >= 0 &&
+   els.dialog.innerHTML.indexOf("Keep logging") >= 0);
+sandbox.closeDialog();
+ok("declining keeps the workout", !!S().live && sandbox.dlgOpen === false);
+eq("declining keeps the set", S().live.ex[0].sets.length, 1);
+sandbox.askCancel(); sandbox.dialogYes();
+ok("confirming discards the workout", S().live === null);
+eq("a cancelled workout is never stored", S().sessions.length, sessionsBefore);
+eq("cancelling lands on the calendar", screen(), "home/calendar");
+sandbox.startWorkout(); sandbox.askCancel();
+ok("an empty workout says nothing is lost",
+   els.dialog.innerHTML.indexOf("Nothing is logged yet") >= 0);
+sandbox.dialogYes();
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

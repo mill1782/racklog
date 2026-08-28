@@ -171,7 +171,7 @@ button.ghostset:hover{border-style:solid;border-color:var(--accent);color:var(--
   border-top:1px solid var(--line);border-radius:16px 16px 0 0;max-height:82%;
   display:flex;flex-direction:column;
   transform:translateY(101%);transition:transform .22s cubic-bezier(.3,.8,.4,1)}
-body.sheet-open .scrim{opacity:1;pointer-events:auto}
+body.sheet-open #scrim{opacity:1;pointer-events:auto}
 body.sheet-open .sheet{transform:translateY(0)}
 .sheet header{padding:14px 16px 10px;display:block}
 .search{width:100%;height:44px;border-radius:10px;border:1px solid var(--line);
@@ -183,6 +183,21 @@ body.sheet-open .sheet{transform:translateY(0)}
 .pickitem:hover{background:var(--surface-2)}
 .pickitem small{margin-left:auto;color:var(--ink-3);font-size:12px;white-space:nowrap;padding-left:8px}
 .grouphead{padding:14px 8px 5px}
+
+/* confirm dialog. Not window.confirm: a native modal blocks the whole page
+   (and the artifact iframe) until it is dismissed. */
+#dscrim{z-index:7}
+body.dialog-open #dscrim{opacity:1;pointer-events:auto}
+.dialog{position:absolute;left:16px;right:16px;top:50%;z-index:8;background:var(--surface);
+  border:1px solid var(--line);border-radius:16px;padding:18px 18px 14px;box-shadow:var(--shadow);
+  opacity:0;pointer-events:none;transform:translateY(-46%) scale(.97);
+  transition:opacity .16s,transform .16s}
+body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%) scale(1)}
+.dialog h2{font-size:22px;text-transform:uppercase}
+.dialog p{margin:9px 0 16px;font-size:14px;line-height:1.55;color:var(--ink-2)}
+.dialog p b{color:var(--ink);font-family:"JetBrains Mono",monospace;font-weight:700}
+.dlgbtns{display:flex;gap:8px}
+.dlgbtns .btn{flex:1;padding:12px 8px}
 
 .calwrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 12px 10px;margin-bottom:12px}
@@ -245,6 +260,8 @@ figcaption span{font-size:12px;color:var(--ink-3);text-align:right}
     <header><input class="search" id="q" placeholder="Search or name a new exercise" autocomplete="off"></header>
     <div class="sheetscroll" id="picklist"></div>
   </div>
+  <div class="scrim" id="dscrim"></div>
+  <div class="dialog" id="dialog" role="alertdialog" aria-modal="true"></div>
 </div>
 
 <script>
@@ -519,6 +536,9 @@ function renderSession(){
   var live = !!S.live && (!view.id || view.id===S.live.id);
   var s = live ? S.live : S.sessions.filter(function(x){return x.id===view.id;})[0];
   if(!s){ view={name:"home"}; return render(); }
+  /* a finished session opens read-only; "Edit" unlocks exactly the controls a
+     live workout has, so there is one set of editing affordances, not two */
+  var edit = !live && !!view.edit, canEdit = live || edit;
   var t=totals(s);
   var readout = t.hasCardio && !t.hasLift
     ? {k:"Time",v:t.mins+" min"}
@@ -526,11 +546,12 @@ function renderSession(){
 
   var head='<div class="livehead" data-split="'+s.split+'">'+
     '<div class="rowbetween"><div><div class="eyebrow">'+
-      (live?'Logging now &middot; '+dstr(s.date):dstr(s.date,true))+'</div>'+
+      (live?'Logging now &middot; '+dstr(s.date)
+           :edit?'Editing &middot; '+dstr(s.date,true):dstr(s.date,true))+'</div>'+
       '<h2 style="margin-top:3px">'+SPLIT_NAME[s.split]+' day</h2></div>'+
       '<div style="text-align:right"><div class="eyebrow">'+readout.k+'</div>'+
       '<div class="num" style="font-size:17px;font-weight:700">'+readout.v+'</div></div></div>'+
-    (live?'<div class="splitpick">'+SPLITS.map(function(p){
+    (canEdit?'<div class="splitpick">'+SPLITS.map(function(p){
       return '<button data-split="'+p[0]+'" aria-pressed="'+(s.split===p[0])+
         '" onclick="setSplit(\''+p[0]+'\')">'+p[1]+'</button>';}).join("")+'</div>':'')+
     '</div>';
@@ -539,7 +560,7 @@ function renderSession(){
     var k=kindOf(x), spec=KINDS[k], prev=priorTo(x.name,s);
     var lastRow = prev
       ? '<div class="lastline"><span class="lastlabel">'+dstr(prev.date)+'</span>'+
-        prev.sets.map(function(tt){ return live
+        prev.sets.map(function(tt){ return canEdit
           ? '<button class="ghostset" onclick="prefill('+i+',\''+tt.join(",")+'\')">'+setChip(k,tt)+'</button>'
           : '<span class="ghostset">'+setChip(k,tt)+'</span>';}).join("")+'</div>'
       : '<div class="lastline"><span class="lastlabel">First time logging this</span></div>';
@@ -553,12 +574,15 @@ function renderSession(){
       var isPr = k==="lift" && pb>0 && e1rm(tt[0],tt[1])===topNow && topNow>pb;
       return '<div class="setrow"><span class="setno">'+(j+1)+'</span>'+
         '<span class="setval">'+setHTML(k,tt)+(isPr?'<span class="pr">PR</span>':'')+'</span>'+
-        (live?'<button class="kill" title="Remove entry" onclick="delSet('+i+','+j+')">&times;</button>':'<span></span>')+
+        (canEdit?'<button class="kill" title="Remove entry" onclick="delSet('+i+','+j+')">&times;</button>':'<span></span>')+
         '</div>';}).join("");
 
-    var d = x.draft || spec.fields.map(function(){return 0;});
+    /* finished sessions have no draft (finish() strips it), so editing one
+       falls back to that exercise's own last set */
+    var d = x.draft || (x.sets.length ? x.sets[x.sets.length-1]
+                                      : spec.fields.map(function(){return 0;}));
     var entry="";
-    if(live){
+    if(canEdit){
       entry='<div class="entry'+(spec.fields.length>2?' stack':'')+'">'+
         spec.fields.map(function(f,j){return field(f.label,"f"+i+"_"+j,d[j],f.step);}).join("")+
         '<button class="btn addset" onclick="addSet('+i+')">Log</button></div>';
@@ -567,7 +591,7 @@ function renderSession(){
        slotted into a push day is visible as one */
     return '<div class="excard" data-split="'+(x.split||(isCardio(k)?"cardio":s.split))+'">'+
       '<div class="exhead"><h2>'+esc(x.name)+'</h2>'+
-      (live?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>'
+      (canEdit?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>'
            :'<button class="back" onclick="openExercise(\''+jstr(x.name)+'\')">Chart &rsaquo;</button>')+
       '</div>'+lastRow+(x.sets.length?'<div class="sets">'+sets+'</div>':"")+entry+'</div>';
   }).join("");
@@ -576,12 +600,17 @@ function renderSession(){
     '<div class="empty">Nothing logged yet.<br>Add your first exercise below.</div>';
 
   V.innerHTML='<header><button class="back" onclick="goHome()">&lsaquo; Rack Log</button>'+
-    (live?'<span class="eyebrow" style="padding-bottom:2px">Workout keeps running</span>':'')+
+    (live?'<button class="back" onclick="askCancel()">Cancel workout</button>'
+     :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>':'')+
     '</header>'+scroll(head+cards+empty);
   BAR.innerHTML = live
     ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
       '<button class="btn" onclick="finish()">Finish</button>'
-    : '<button class="btn wide ghost" onclick="goHome()">Back to history</button>';
+    : edit
+    ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
+      '<button class="btn" onclick="doneEditing()">Done</button>'
+    : '<button class="btn wide ghost" onclick="goHome()">Back to history</button>'+
+      '<button class="btn" onclick="editSession()">Edit</button>';
 }
 function field(label,id,val,step){
   return '<div class="field"><label for="'+id+'">'+label+'</label><div class="stepper">'+
@@ -691,14 +720,36 @@ function setMonth(n){S.month=shiftMonth(S.month,n);save();render();}
 function goHome(){S.tab="history";view={name:"home"};save();render();}
 function resume(){view={name:"session"};render();}
 function startWorkout(){S.live={id:"live",date:TODAY,split:"push",ex:[]};view={name:"session"};save();render();}
-function setSplit(k){S.live.split=k;save();render();}
+function setSplit(k){var t=editable(); if(!t)return; t.split=k;save();render();}
 function openSession(id){view={name:"session",id:id};render();}
+/* The one session logging actions write to: the live workout, or a finished
+   one opened for editing. Everything below goes through it, so live and edit
+   share a single code path. */
+function editable(){
+  if(view.name!=="session") return null;
+  if(S.live && (!view.id || view.id===S.live.id)) return S.live;
+  if(!view.edit) return null;
+  return S.sessions.filter(function(x){return x.id===view.id;})[0]||null;
+}
+function editSession(){ if(view.name==="session"&&view.id){view.edit=true;render();} }
+/* Leaving edit mode mirrors finish(): drop empty exercises and the drafts.
+   Emptying a session out deletes it -- that is how you throw a day away. */
+function doneEditing(){
+  var s=editable(); if(!s) return;
+  s.ex=s.ex.filter(function(x){return x.sets.length;});
+  s.ex.forEach(function(x){delete x.draft;});
+  if(s.ex.length){ view={name:"session",id:s.id}; }
+  else { S.sessions=S.sessions.filter(function(x){return x.id!==s.id;});
+         S.tab="history"; view={name:"home"}; }
+  save(); render();
+}
 function openExercise(n){view={name:"exercise",name2:n,from:view};render();}
 function goBack(){view=(view.from&&view.from.name!=="exercise")?view.from:{name:"home"};render();}
 function bump(id,d){var el=document.getElementById(id);
   el.value=fmt(Math.max(0,(parseFloat(el.value)||0)+d));}
 function addSet(i){
-  var x=S.live.ex[i], spec=KINDS[kindOf(x)], vals=[], ok=true;
+  var t=editable(); if(!t)return;
+  var x=t.ex[i], spec=KINDS[kindOf(x)], vals=[], ok=true;
   spec.fields.forEach(function(f,j){
     var v=parseFloat(document.getElementById("f"+i+"_"+j).value);
     if(isNaN(v))v=0;
@@ -706,14 +757,27 @@ function addSet(i){
   if(vals[0]<=0) return;            /* reps, or minutes, must be > 0 */
   x.sets.push(vals); x.draft=vals.slice(); save(); render();
 }
-function delSet(i,j){S.live.ex[i].sets.splice(j,1);save();render();}
-function delEx(i){S.live.ex.splice(i,1);save();render();}
+function delSet(i,j){var t=editable(); if(!t)return; t.ex[i].sets.splice(j,1);save();render();}
+function delEx(i){var t=editable(); if(!t)return; t.ex.splice(i,1);save();render();}
 function prefill(i,csv){
   csv.split(",").forEach(function(v,j){
     var el=document.getElementById("f"+i+"_"+j);
     if(el)el.value=fmt(parseFloat(v));});
   var lastEl=document.getElementById("f"+i+"_0"); if(lastEl)lastEl.focus();
 }
+/* Cancelling throws away everything logged so far, so it asks first. */
+function askCancel(){
+  var l=S.live; if(!l) return;
+  var sets=0; l.ex.forEach(function(x){sets+=x.sets.length;});
+  confirmDialog("Cancel workout?",
+    sets ? "You&rsquo;ll lose <b>"+sets+"</b> set"+(sets===1?"":"s")+" across <b>"+
+           l.ex.length+"</b> exercise"+(l.ex.length===1?"":"s")+
+           ". This can&rsquo;t be undone."
+         : "Nothing is logged yet, so nothing will be lost.",
+    "Discard workout","Keep logging",cancelWorkout);
+}
+function cancelWorkout(){S.live=null;S.tab="history";view={name:"home"};save();render();}
+
 function finish(){
   var l=S.live;
   l.ex=l.ex.filter(function(x){return x.sets.length;});
@@ -721,6 +785,24 @@ function finish(){
   if(l.ex.length){ l.id="u"+Date.now(); S.sessions.push(l); S.month=ym(l.date); }
   S.live=null; S.tab="history"; view={name:"home"}; save(); render();
 }
+
+/* ---------- confirm dialog ----------
+   Deliberately not window.confirm: a native modal freezes the page (and, in
+   the published artifact, the whole iframe) until it is dismissed. */
+var DLG=document.getElementById("dialog"), dlgAction=null, dlgOpen=false;
+function confirmDialog(title,body,yes,no,fn){
+  dlgAction=fn; dlgOpen=true;
+  DLG.innerHTML='<h2>'+title+'</h2><p>'+body+'</p><div class="dlgbtns">'+
+    '<button class="btn ghost" onclick="closeDialog()">'+no+'</button>'+
+    '<button class="btn" id="dlgyes" onclick="dialogYes()">'+yes+'</button></div>';
+  document.body.classList.add("dialog-open");
+  setTimeout(function(){var b=document.getElementById("dlgyes"); if(b)b.focus();},180);
+}
+function closeDialog(){dlgAction=null;dlgOpen=false;document.body.classList.remove("dialog-open");}
+function dialogYes(){var f=dlgAction; closeDialog(); if(f)f();}
+document.getElementById("dscrim").onclick=closeDialog;
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape"&&dlgOpen)closeDialog();});
 
 /* ---------- exercise picker ---------- */
 var Q=document.getElementById("q");
@@ -735,7 +817,7 @@ function openSheet(){document.body.classList.add("sheet-open");Q.value="";fillPi
 function closeSheet(){document.body.classList.remove("sheet-open");}
 function fillPick(){
   var q=Q.value.trim().toLowerCase();
-  var idx=exerciseIndex(), split=S.live?S.live.split:"push";
+  var idx=exerciseIndex(), t=editable(), split=t?t.split:"push";
   var mine=Array.from(idx.values()).filter(function(e){return e.name.toLowerCase().indexOf(q)>=0;})
     .sort(function(a,b){
       var ap=(a.split===split)||(split==="cardio"&&isCardio(a.kind));
@@ -796,7 +878,7 @@ function newItem(n,kind,split,label,meta){
     '<span class="dot"></span><span>'+label+'</span><small>'+meta+'</small></button>';
 }
 function pick(n,k,sp){
-  var s=S.live;
+  var s=editable(); if(!s) return;
   var has=s.ex.some(function(x){return x.name===n;});
   if(!has){
     var prev=priorTo(n,s);
