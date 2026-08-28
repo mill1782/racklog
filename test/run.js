@@ -293,5 +293,93 @@ sandbox.goHome(); sandbox.setHome("crew");
 eq("feed is back to the crew's own", feedCount(), sandbox.FEED.length);
 sandbox.setHome("mine");
 
+/* ---- 10. likes and comments ---- */
+group("Likes and comments");
+sandbox.S.live = null;
+sandbox.goHome(); sandbox.setHome("crew");
+ok("seeded likes show a count", viewHTML().indexOf('<span class="n">2</span>') >= 0);
+ok("nothing is liked by you at the start", !sandbox.liked("f1"));
+sandbox.toggleLike("f1");
+ok("liking records you", sandbox.liked("f1"));
+eq("and bumps the count", sandbox.soc("f1").likes.length, 3);
+ok("the button reflects it", viewHTML().indexOf('aria-pressed="true"') >= 0);
+sandbox.toggleLike("f1");
+ok("liking again takes it back", !sandbox.liked("f1"));
+eq("count returns", sandbox.soc("f1").likes.length, 2);
+
+ok("threads are collapsed by default", viewHTML().indexOf('class="thread"') < 0);
+ok("a card with no comments still offers Reply", viewHTML().indexOf("toggleThread('f5')") >= 0);
+sandbox.toggleThread("f1");
+ok("opening shows the thread", viewHTML().indexOf('class="thread"') >= 0);
+ok("seeded comments render", viewHTML().indexOf("225 by November") >= 0);
+ok("a commenter gets their own disc", viewHTML().indexOf('class="cmt" data-person="p2"') >= 0);
+sandbox.document.getElementById("c_f1").value = "  ";
+sandbox.addComment("f1");
+eq("blank comments are ignored", sandbox.soc("f1").comments.length, 2);
+sandbox.document.getElementById("c_f1").value = "Spot me next time";
+sandbox.addComment("f1");
+eq("a comment is stored", sandbox.soc("f1").comments.length, 3);
+eq("posted as you", sandbox.soc("f1").comments[2].who, "me");
+ok("and shows in the thread", viewHTML().indexOf("Spot me next time") >= 0);
+sandbox.toggleThread("f1");
+ok("toggling closes it again", viewHTML().indexOf('class="thread"') < 0);
+ok("only one thread opens at a time",
+   (sandbox.toggleThread("f1"), sandbox.toggleThread("f3"), sandbox.openThread === "f3"));
+sandbox.toggleThread("f3");
+
+/* ---- 11. running someone else's workout ---- */
+group("Running someone else's workout");
+const tess = sandbox.FEED.filter(f => f.id === "f6")[0];
+sandbox.doWorkout("f6");
+eq("no live workout means no prompt", sandbox.dlgOpen, false);
+eq("their split carries over", S().live.split, tess.split);
+eq("their movements carry over",
+   JSON.stringify(S().live.ex.map(x => x.name)),
+   JSON.stringify(tess.ex.map(x => x.name)));
+ok("but none of their sets", S().live.ex.every(x => x.sets.length === 0));
+eq("the copy remembers whose it was", S().live.from.who, "tess");
+eq("and which session", S().live.from.src, "f6");
+ok("the live header names them", viewHTML().indexOf("Tess") >= 0);
+/* Leg Extension: Tess opened 15x70, Mark's own history opens 15x85 */
+const legExt = S().live.ex.filter(x => x.name === "Leg Extension")[0];
+eq("your own numbers win where you have history",
+   JSON.stringify(legExt.draft), "[15,85]");
+const goblet = S().live.ex.filter(x => x.name === "Goblet Squat")[0];
+eq("theirs fill in where you have none", JSON.stringify(goblet.draft), "[12,50]");
+
+/* swapping mid-workout asks first */
+sandbox.document.getElementById("f0_0").value = 12;
+sandbox.document.getElementById("f0_1").value = 55;
+sandbox.addSet(0);
+sandbox.goHome(); sandbox.setHome("crew");
+sandbox.doWorkout("f1");
+ok("swapping a live workout asks first", sandbox.dlgOpen === true);
+ok("the prompt counts what is at stake", els.dialog.innerHTML.indexOf("<b>1</b> set") >= 0);
+sandbox.closeDialog();
+eq("declining keeps your workout", S().live.from.src, "f6");
+sandbox.doWorkout("f1"); sandbox.dialogYes();
+eq("confirming swaps it", S().live.from.src, "f1");
+ok("and the old sets are gone", S().live.ex.every(x => x.sets.length === 0));
+
+/* lineage is only countable once the copy is shared */
+group("Lineage");
+eq("an unfinished copy counts for nothing", sandbox.repeats("f1"), 0);
+/* stay on the live session: the entry fields only exist while it is open */
+sandbox.resume();
+sandbox.document.getElementById("f0_0").value = 8;
+sandbox.document.getElementById("f0_1").value = 185;
+sandbox.addSet(0);
+sandbox.finish();
+const copyId = S().sessions[S().sessions.length - 1].id;
+eq("finishing keeps the lineage", S().sessions[S().sessions.length - 1].from.src, "f1");
+eq("an unshared copy still counts for nothing", sandbox.repeats("f1"), 0);
+sandbox.openSession(copyId); sandbox.toggleShare();
+eq("sharing it makes it count", sandbox.repeats("f1"), 1);
+sandbox.goHome(); sandbox.setHome("crew");
+ok("the original says how far it travelled", viewHTML().indexOf("Done by 1 other") >= 0);
+ok("the copy credits the original", viewHTML().indexOf("Danny&rsquo;s Push day") >= 0);
+ok("your own card offers a rerun instead", viewHTML().indexOf("Do it again") >= 0);
+sandbox.setHome("mine");
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

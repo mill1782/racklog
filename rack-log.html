@@ -126,6 +126,31 @@ button.card:active{transform:scale(.995)}
 [data-person="p1"]{--p:var(--p1)}
 [data-person="p2"]{--p:var(--p2)}
 [data-person="p3"]{--p:var(--p3)}
+.fromline{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.social{margin-top:11px;padding-top:10px;border-top:1px solid var(--line);
+  display:flex;align-items:center;gap:6px}
+.act{display:inline-flex;align-items:center;gap:5px;padding:7px 10px;border-radius:8px;
+  background:var(--surface-2);color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.act:hover{color:var(--ink)}
+.act[aria-pressed="true"],.act[aria-expanded="true"]{color:var(--accent)}
+.act .n{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:11px}
+.act.grow{margin-left:auto;background:var(--surface-3);color:var(--ink)}
+.act.grow:hover{background:var(--accent);color:var(--on-accent)}
+.thread{margin-top:10px;display:flex;flex-direction:column;gap:9px}
+.cmt{display:flex;gap:8px;align-items:flex-start}
+.cmt .avatar{width:24px;height:24px;font-size:10px;margin-top:1px}
+.cmt .body{font-size:14px;line-height:1.45;min-width:0;color:var(--ink-2)}
+.cmt .body b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;
+  text-transform:uppercase;letter-spacing:.04em;color:var(--ink);margin-right:6px}
+.cbox{display:flex;gap:8px}
+.cbox input{flex:1;min-width:0;height:40px;border-radius:9px;border:1px solid var(--line);
+  background:var(--surface-2);padding:0 12px;font-size:16px}
+.cbox input::placeholder{color:var(--ink-3)}
+.cbox button{flex:none;height:40px;padding:0 14px;border-radius:9px;background:var(--accent);
+  color:var(--on-accent);font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;font-size:13px}
 
 .bar{flex:none;position:sticky;bottom:0;z-index:4;
   border-top:1px solid var(--line);background:var(--surface);
@@ -388,32 +413,46 @@ var CREW=[
 ];
 /* Shared sessions carry the same shape as your own, plus `who`. */
 var FEED=[
- {who:"danny",date:"2026-08-27",split:"push",ex:[
+ {id:"f1",who:"danny",date:"2026-08-27",split:"push",ex:[
    {name:"Barbell Bench Press",sets:[[10,155],[8,175],[5,195],[8,175]]},
    {name:"Overhead Press",sets:[[10,95],[8,105],[6,115]]},
    {name:"Cable Fly",sets:[[12,40],[12,45],[10,50]]},
    {name:"Skullcrusher",sets:[[12,65],[10,75],[8,85]]}]},
- {who:"tess",date:"2026-08-27",split:"cardio",ex:[
+ {id:"f2",who:"tess",date:"2026-08-27",split:"cardio",ex:[
    {name:"Treadmill Run",kind:"tread",sets:[[28,6.2,1]]},
    {name:"Rower",kind:"machine",sets:[[15,7]]}]},
- {who:"sam",date:"2026-08-26",split:"legs",ex:[
+ {id:"f3",who:"sam",date:"2026-08-26",split:"legs",ex:[
    {name:"Leg Press",sets:[[12,270],[10,320],[8,360],[8,360]]},
    {name:"Romanian Deadlift",sets:[[10,155],[10,175],[8,185]]},
    {name:"Walking Lunge",sets:[[12,40],[12,40],[10,50]]},
    {name:"Seated Calf Raise",sets:[[15,90],[15,110],[12,130]]}]},
- {who:"danny",date:"2026-08-24",split:"pull",ex:[
+ {id:"f4",who:"danny",date:"2026-08-24",split:"pull",ex:[
    {name:"Deadlift",sets:[[5,275],[3,315],[1,345]]},
    {name:"Barbell Row",sets:[[10,135],[10,145],[8,155]]},
    {name:"Hammer Curl",sets:[[12,30],[10,35],[8,40]]}]},
- {who:"sam",date:"2026-08-23",split:"pull",ex:[
+ {id:"f5",who:"sam",date:"2026-08-23",split:"pull",ex:[
    {name:"Chest Supported Row",sets:[[12,90],[12,100],[10,110]]},
    {name:"Face Pull",sets:[[15,40],[15,45],[15,50]]},
    {name:"Cable Curl",sets:[[12,50],[12,60],[10,70]]}]},
- {who:"tess",date:"2026-08-22",split:"legs",ex:[
+ {id:"f6",who:"tess",date:"2026-08-22",split:"legs",ex:[
    {name:"Goblet Squat",sets:[[12,50],[12,60],[10,70]]},
    {name:"Hip Thrust",sets:[[12,185],[12,205],[10,225]]},
    {name:"Leg Extension",sets:[[15,70],[15,85],[12,100]]}]}
 ];
+/* Likes and comments, keyed by feed-item id (a fixture's "f1", or your own
+   session's id once you share it). Seeded on first load like SEED is. */
+function seedSocial(){return {
+  f1:{likes:["sam","tess"],comments:[
+    {who:"sam",text:"195 for 5 is moving. What are you chasing?"},
+    {who:"danny",text:"225 by November."}]},
+  f2:{likes:["danny"],comments:[]},
+  f3:{likes:["danny","tess"],comments:[
+    {who:"tess",text:"360 on the press — leg day is not a joke to this man."}]},
+  f4:{likes:["sam"],comments:[
+    {who:"sam",text:"345 pull. Did the bar bend or was that you?"}]},
+  f5:{likes:[],comments:[]},
+  f6:{likes:["danny","sam"],comments:[]}
+};}
 var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
   legs:"Legs movements",other:"Core &amp; other"};
 var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["cardio","Cardio"],["other","Other"]];
@@ -425,10 +464,13 @@ var KEY="racklog.proto.v2", S=null;
 try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
 if(!S||!S.sessions) S={sessions:SEED.slice(),live:null,tab:"history"};
 if(!S.month) S.month=TODAY.slice(0,7);
+/* added after v2 shipped; filled in place so the storage key stays put and
+   nobody's logged workouts are wiped (see HANDOFF trap 4) */
+if(!S.social) S.social=seedSocial();
 /* the calendar is home: every launch opens there, whatever tab you left on,
    and on Mine rather than the crew feed */
 S.tab="history"; S.home="mine";
-var view={name:"home"};
+var view={name:"home"}, openThread=null;
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
 
 /* ---------- helpers ---------- */
@@ -491,11 +533,28 @@ function personOf(id){
 function initials(n){
   return n.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join("").toUpperCase();}
 function firstName(n){return n.split(/\s+/)[0];}
+function plural(n,w){return n+" "+w+(n===1?"":"s");}
 /* your shared sessions and the crew's, newest first */
 function crewFeed(){
   var mine=S.sessions.filter(function(s){return s.shared;}).map(function(s){
-    return {who:ME.id,date:s.date,split:s.split,ex:s.ex,sid:s.id};});
+    return {id:s.id,who:ME.id,date:s.date,split:s.split,ex:s.ex,from:s.from||null};});
   return FEED.concat(mine).sort(function(a,b){return b.date.localeCompare(a.date);});}
+function feedItem(id){
+  return crewFeed().filter(function(x){return x.id===id;})[0]||null;}
+
+/* ---------- likes and comments ----------
+   soc() reads and must never be written through -- it hands back a shared
+   empty when nothing is stored. socW() is the one that creates. */
+var NOSOC={likes:[],comments:[]};
+function soc(id){return S.social[id]||NOSOC;}
+function socW(id){return S.social[id]||(S.social[id]={likes:[],comments:[]});}
+function liked(id){return soc(id).likes.indexOf(ME.id)>=0;}
+
+/* ---------- lineage ----------
+   A workout started from someone else's carries from:{who,src}. The copy
+   says whose it was; the original counts how many people ran it. */
+function repeats(id){
+  return crewFeed().filter(function(x){return x.from&&x.from.src===id;}).length;}
 
 /* one session's totals, split by kind */
 function totals(s){var v=0,mins=0,nsets=0,hasCardio=false,hasLift=false;
@@ -517,7 +576,7 @@ function setChip(k,t){
   return fmt(t[0])+"min "+fmt(t[1])+"mph "+fmt(t[2])+"%";
 }
 function exSummary(k,sets){
-  if(k==="lift") return sets.length+" sets &middot; top "+fmt(heaviest(sets)[1])+" lb";
+  if(k==="lift") return plural(sets.length,"set")+" &middot; top "+fmt(heaviest(sets)[1])+" lb";
   if(k==="machine") return hhmm(minutes(sets))+" &middot; level "+fmt(topLevel(sets));
   return hhmm(minutes(sets))+" &middot; "+fmt(heaviest(sets)[1])+" mph";
 }
@@ -578,8 +637,8 @@ function crewHTML(){
   if(!items.length) return '<div class="empty">Nothing shared yet.<br>'+
     'Open a finished workout and tap Share to crew.</div>';
   return '<div class="list">'+items.map(function(s){
-    var p=personOf(s.who), t=totals(s), parts=[ago(s.date), s.ex.length+" exercises"];
-    if(t.hasLift) parts.push(t.sets+" sets",
+    var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
+    if(t.hasLift) parts.push(plural(t.sets,"set"),
       '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
     if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
     return '<div class="card" data-split="'+s.split+'">'+
@@ -588,11 +647,42 @@ function crewHTML(){
         '<span class="nm">'+esc(firstName(p.name))+'</span>'+
         (s.who===ME.id?'<span class="you">You</span>':'')+
       '</div><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
+      lineage(s)+
       '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
       '<div class="exlist">'+s.ex.map(function(x){
         return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+
           exSummary(kindOf(x),x.sets)+'</span></div>';
-      }).join("")+'</div></div>';}).join("")+'</div>';
+      }).join("")+'</div>'+socialHTML(s)+'</div>';}).join("")+'</div>';
+}
+/* where a workout came from, or how far it travelled */
+function lineage(s){
+  if(s.from) return '<div class="fromline">&#8635; '+
+    esc(firstName(personOf(s.from.who).name))+'&rsquo;s '+SPLIT_NAME[s.from.split]+' day</div>';
+  var n=repeats(s.id);
+  return n ? '<div class="fromline">&#8635; Done by '+n+
+    (n===1?' other':' others')+'</div>' : '';
+}
+function socialHTML(s){
+  var e=soc(s.id), open=openThread===s.id, mine=liked(s.id);
+  var row='<div class="social">'+
+    '<button class="act'+(mine?' on':'')+'" aria-pressed="'+mine+
+      '" onclick="toggleLike(\''+jstr(s.id)+'\')">&hearts;'+
+      (e.likes.length?' <span class="n">'+e.likes.length+'</span>':'')+'</button>'+
+    '<button class="act'+(open?' on':'')+'" aria-expanded="'+open+
+      '" onclick="toggleThread(\''+jstr(s.id)+'\')">Reply'+
+      (e.comments.length?' <span class="n">'+e.comments.length+'</span>':'')+'</button>'+
+    '<button class="act grow" onclick="doWorkout(\''+jstr(s.id)+'\')">'+
+      (s.who===ME.id?'Do it again':'Do this workout')+'</button></div>';
+  if(!open) return row;
+  var thread=e.comments.map(function(c){
+    var p=personOf(c.who);
+    return '<div class="cmt" data-person="'+p.person+'">'+
+      '<span class="avatar">'+esc(initials(p.name))+'</span>'+
+      '<div class="body"><b>'+esc(firstName(p.name))+'</b>'+esc(c.text)+'</div></div>';}).join("");
+  return row+'<div class="thread">'+thread+
+    '<div class="cbox"><input id="c_'+esc(s.id)+'" placeholder="Say something" '+
+      'autocomplete="off" onkeydown="if(event.key===\'Enter\')addComment(\''+jstr(s.id)+'\')">'+
+    '<button onclick="addComment(\''+jstr(s.id)+'\')">Post</button></div></div>';
 }
 
 function renderHome(){
@@ -606,8 +696,8 @@ function renderHome(){
     if(S.home==="crew") return renderHomeShell(seg+crewHTML());
     var ss=inMonth(S.month);
     body = seg + calendar() + (ss.length ? '<div class="list">'+ss.map(function(s){
-      var t=totals(s), parts=[ago(s.date), s.ex.length+" exercises"];
-      if(t.hasLift) parts.push(t.sets+" sets", '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
+      var t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
+      if(t.hasLift) parts.push(plural(t.sets,"set"), '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
       if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
       return '<button class="card" data-split="'+s.split+'" onclick="openSession(\''+s.id+'\')">'+
         '<div class="rowbetween"><h2>'+dstr(s.date)+'</h2><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
@@ -664,7 +754,9 @@ function renderSession(){
     '<div class="rowbetween"><div><div class="eyebrow">'+
       (live?'Logging now &middot; '+dstr(s.date)
            :edit?'Editing &middot; '+dstr(s.date,true):dstr(s.date,true))+'</div>'+
-      '<h2 style="margin-top:3px">'+SPLIT_NAME[s.split]+' day</h2></div>'+
+      '<h2 style="margin-top:3px">'+SPLIT_NAME[s.split]+' day</h2>'+
+      (s.from?'<div class="fromline">&#8635; '+
+        esc(firstName(personOf(s.from.who).name))+'&rsquo;s workout</div>':'')+'</div>'+
       '<div style="text-align:right"><div class="eyebrow">'+readout.k+'</div>'+
       '<div class="num" style="font-size:17px;font-weight:700">'+readout.v+'</div></div></div>'+
     (canEdit?'<div class="splitpick">'+SPLITS.map(function(p){
@@ -833,7 +925,45 @@ function barChart(pts){
 
 /* ---------- actions ---------- */
 function setTab(t){S.tab=t;view={name:"home"};save();render();}
-function setHome(v){S.home=v;view={name:"home"};save();render();}
+function setHome(v){S.home=v;openThread=null;view={name:"home"};save();render();}
+function toggleLike(id){
+  var l=socW(id).likes, i=l.indexOf(ME.id);
+  if(i>=0) l.splice(i,1); else l.push(ME.id);
+  save(); render();
+}
+function toggleThread(id){openThread=(openThread===id?null:id);render();}
+function addComment(id){
+  var el=document.getElementById("c_"+id); if(!el) return;
+  var t=el.value.trim(); if(!t) return;
+  socW(id).comments.push({who:ME.id,text:t});
+  el.value=""; save(); render();
+}
+/* Start someone else's workout as a template: their exercise list and split,
+   your own numbers. The copy remembers where it came from, which is what
+   makes "done by N others" countable on the original. */
+function doWorkout(id){
+  var item=feedItem(id); if(!item) return;
+  if(!S.live) return startFrom(item);
+  var n=0; S.live.ex.forEach(function(x){n+=x.sets.length;});
+  confirmDialog("Swap workouts?",
+    (n?"Your live "+SPLIT_NAME[S.live.split]+" workout has <b>"+n+"</b> set"+
+        (n===1?"":"s")+" logged. Starting this one discards it."
+       :"Your live "+SPLIT_NAME[S.live.split]+" workout has nothing logged yet."),
+    "Start theirs","Keep mine",function(){startFrom(item);});
+}
+function startFrom(item){
+  S.live={id:"live",date:TODAY,split:item.split,ex:[],
+          from:{who:item.who,src:item.id,split:item.split}};
+  item.ex.forEach(function(x){
+    var kind=kindOf(x), prev=priorTo(x.name,S.live);
+    /* their session sets the movements; your own history sets the numbers,
+       falling back to theirs only where you have never done it */
+    S.live.ex.push({name:x.name,kind:kind,
+      split:x.split||(isCardio(kind)?"cardio":item.split),sets:[],
+      draft:prev?prev.sets[0].slice():(x.sets[0]?x.sets[0].slice():defaultDraft(kind))});
+  });
+  openThread=null; view={name:"session"}; save(); render();
+}
 /* Sharing is explicit and per-session: a workout you never share stays yours.
    Prototype only -- this flips a flag the local feed reads, it does not
    publish anything to anyone. */
