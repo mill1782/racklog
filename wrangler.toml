@@ -7,7 +7,7 @@ account_id = "2f2569917e53a95a5f8776e9879eaf64"
 # assets directory to keep in sync and still no build step. HTML is a Text
 # module by default; PNG needs saying, and fallthrough keeps the defaults.
 rules = [
-  { type = "Data", globs = ["**/*.png"], fallthrough = true }
+  { type = "Data", globs = ["**/*.png", "**/*.jpg"], fallthrough = true }
 ]
 
 # Google sign-in. The client id is public and belongs in the repo; the secret

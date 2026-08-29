@@ -174,12 +174,17 @@ button.card:active{transform:scale(.995)}
 .empty{text-align:center;color:var(--ink-3);padding:44px 20px;font-size:14px;line-height:1.6}
 
 /* the door: the only thing on screen until the server says who you are */
+.splash{display:block;width:100%;height:100%;object-fit:cover;object-position:center;
+  background:#111820}
 .gate{max-width:320px;margin:0 auto;padding:12vh 0 40px;text-align:center}
 .brandmark{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:36px;
   line-height:1.05;text-transform:uppercase;letter-spacing:.03em}
 .brandmark s{display:block;text-decoration:none;height:4px;width:46px;margin:10px auto 0;
   border-radius:2px;background:var(--accent)}
 .gatesub{color:var(--ink-2);font-size:13px;line-height:1.55;margin:16px 0 22px}
+.gateswap{color:var(--ink-3);font-size:12.5px;margin:14px 0 0;text-align:center}
+.link2{background:none;border:0;padding:0;color:var(--accent);font:inherit;
+  font-weight:600;cursor:pointer;text-decoration:underline}
 .gate .msg{text-align:center}
 /* the signed-in person, where the Data button used to be */
 /* a screen reached from the calendar stacks its back button over the title */
@@ -192,6 +197,21 @@ header .back+h1{margin-top:8px}
 .rosterrow .avatar{width:28px;height:28px;font-size:12px}
 .rosterrow .nm{font-size:16px}
 .rosternote{margin:11px 0 0;color:var(--ink-3);font-size:12.5px;line-height:1.55}
+/* finding people, on the crew tab */
+.crewbar{display:flex;gap:8px;margin-bottom:12px}
+.crewbar .search{flex:1}
+.crewbar .btn{flex:none;width:auto;padding:0 16px;height:44px}
+.findlist{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.findrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--surface);padding:10px 12px}
+.findrow .at{display:block;color:var(--ink-3);font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.findrow .nm{line-height:1.15}
+.follow{flex:none;padding:7px 13px;border-radius:999px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;
+  background:var(--accent);color:#10121a;border:1px solid var(--accent)}
+.follow.on{background:transparent;color:var(--ink-2);border-color:var(--line)}
 .rosternote code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
   background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
 .exq{margin-bottom:12px}
@@ -524,7 +544,8 @@ function save(){ saveLocal(); syncSoon(); }
    the last JSON we know the server has, per session id, and dirtyOps() diffs
    against it. That is why none of the fifteen mutation paths had to change:
    they all end in save(), and save() is enough. */
-var SY={since:0,shadow:{},user:null,google:false,feed:[],crew:[]};
+var SY={since:0,shadow:{},user:null,google:false,feed:[],crew:[],
+        counts:{following:0,followers:0}};
 function saveSync(){ try{ localStorage.setItem(SKEYNOW,
   JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
 
@@ -532,17 +553,27 @@ var API=null;              /* null = not checked, false = no server, true = serv
 /* An invite link is a real URL -- it gets texted to people -- so the code
    arrives on location.pathname, not in a field somebody types. */
 var JOIN={code:"",state:"",from:null,error:""};
+/* which half of the front door is showing. "new" is the default behind an
+   invite link -- somebody following one usually does not have an account. */
+var GATE={mode:"in"};
+function gateMode(m){GATE.mode=m;render();}
 var INV={list:null,fresh:null,msg:""};
+/* Finding somebody to follow. `people` is null until a search has answered,
+   which is what tells "searching" apart from "nobody matches". */
+var FIND={q:"",people:null};
+var findSeq=0;
 function joinCode(){
   if(typeof location==="undefined") return "";
   var m=String(location.pathname||"").match(/^\/join\/([a-f0-9]{32})$/);
   return m?m[1]:"";
 }
 /* Checked before the form is drawn, so an expired link says so instead of
-   asking a stranger to choose a PIN and then refusing them. */
+   asking a stranger to pick a username and then refusing them. */
 function checkInvite(){
   JOIN.code=joinCode();
   if(!JOIN.code) return;
+  /* somebody arriving on a link is usually new here */
+  if(!SY.user) GATE.mode="new";
   JOIN.state="checking";
   apiFetch("/api/invite/"+JOIN.code).then(function(j){
     JOIN.state="ok"; JOIN.from=j.from||null; render();
@@ -580,7 +611,10 @@ function syncBoot(){
     API=true; SY.user=j.user||null; SY.google=!!j.google;
     loadStore(SY.user?SY.user.id:null);
     render();
-    if(SY.user) sync(); else checkInvite();
+    /* checked either way now: an invite link means something to somebody who
+       is already signed in, where it used to mean nothing */
+    if(SY.user) sync();
+    checkInvite();
   },solo);
 }
 function syncSoon(){
@@ -628,6 +662,7 @@ function sync(){
       return apiFetch("/api/feed").then(function(f){
         SY.feed=f.items||[];
         SY.crew=f.crew||[];
+        SY.counts=f.counts||{following:0,followers:0};
         /* The server owns engagement now. S.social is a cache of what it last
            said, kept only so the feed still draws while offline; it is
            replaced wholesale, never merged. */
@@ -648,15 +683,59 @@ function sync(){
       if(view.name==="data") render();
     });
 }
+/* Both doors end the same way, and an invite link may have brought you to
+   either of them -- so the code is spent, the address bar is cleaned, and the
+   app opens, in one place rather than three. */
+function afterAuth(){
+  return function(j){
+    SY.user=j.user; syncMsg=""; JOIN.code=""; JOIN.state=""; GATE.mode="in";
+    loadStore(j.user.id); openThread=null; view={name:"home"};
+    stripJoin();
+    render(); sync();
+  };
+}
+function authFail(box,fallback){
+  return function(e){ msg(box,(e&&e.message)||fallback,true); };
+}
+/* the code is spent the moment it is used; it has no business sitting in
+   browser history or in a screenshot of the address bar */
+function stripJoin(){
+  if(typeof location==="undefined"||!/^\/join\//.test(String(location.pathname||""))) return;
+  if(typeof history!=="undefined"&&history.replaceState)
+    try{ history.replaceState(null,"","/"); }catch(e){}
+}
 function signIn(){
-  var n=document.getElementById("loginname"), k=document.getElementById("loginpin");
-  var name=n?String(n.value||"").trim():"", pin=k?String(k.value||"").trim():"";
-  if(!name||!pin) return msg("authmsg","Enter your name and PIN.",true);
+  var n=document.getElementById("loginname"), k=document.getElementById("loginpass");
+  var name=n?String(n.value||"").trim().toLowerCase():"", pass=k?String(k.value||""):"";
+  if(!name||!pass) return msg("authmsg","Enter your username and password.",true);
   msg("authmsg","Signing in\u2026",false);
-  apiFetch("/api/login",{method:"POST",body:JSON.stringify({name:name,pin:pin})})
-    .then(function(j){ SY.user=j.user; syncMsg=""; loadStore(j.user.id);
-            openThread=null; view={name:"home"}; render(); sync(); },
-          function(e){ msg("authmsg",(e&&e.message)||"Couldn\u2019t sign in.",true); });
+  /* an invite in hand is spent AFTER signing in, by /api/invite/<code>/accept:
+     there is no account to make, only the two follows to write */
+  var code=JOIN.code;
+  apiFetch("/api/login",{method:"POST",body:JSON.stringify({username:name,password:pass})})
+    .then(function(j){
+      if(!code) return afterAuth()(j);
+      /* the follow is a nicety; failing it must not strand somebody who is
+         now signed in, so both paths open the app */
+      return apiFetch("/api/invite/"+encodeURIComponent(code)+"/accept",{method:"POST"})
+        .then(function(){ afterAuth()(j); },function(){ afterAuth()(j); });
+    }, authFail("authmsg","Couldn\u2019t sign in."));
+}
+function createAccount(){
+  var d=document.getElementById("newdisplay"), n=document.getElementById("loginname"),
+      k=document.getElementById("loginpass");
+  var display=d?String(d.value||"").trim():"",
+      name=n?String(n.value||"").trim().toLowerCase():"", pass=k?String(k.value||""):"";
+  if(!display) return msg("authmsg","Enter the name you want on your workouts.",true);
+  if(!/^[a-z0-9][a-z0-9._]{2,19}$/.test(name))
+    return msg("authmsg","Usernames are 3 to 20 characters: letters, numbers, dots "+
+      "and underscores.",true);
+  if(pass.length<8) return msg("authmsg","Passwords need at least 8 characters.",true);
+  msg("authmsg","Creating your account\u2026",false);
+  var body={name:display,username:name,password:pass};
+  if(JOIN.code) body.code=JOIN.code;
+  apiFetch("/api/signup",{method:"POST",body:JSON.stringify(body)})
+    .then(afterAuth(), authFail("authmsg","Couldn\u2019t create that account."));
 }
 /* Sign-out has to leave the handset clean, because the next person to sign in
    is a different member of the family. Order matters: flush what is queued,
@@ -683,6 +762,7 @@ function signOut(){
     var done=function(){
       if(clean&&uid) forget(uid);
       SY.user=null; SY.feed=[]; SY.crew=[]; FEEDP={}; SY.since=0; SY.shadow={};
+      SY.counts={following:0,followers:0}; FIND={q:"",people:null};
       syncMsg=clean?"":"Some changes hadn\u2019t uploaded yet, so they were kept on this device.";
       S=blank(); KEYNOW=storeKey(null); SKEYNOW=syncKey(null);
       openThread=null; view={name:"home"}; render();
@@ -826,7 +906,10 @@ function render(){
   var key=viewKey(), box=scrollBox();
   var top=(key===lastKey&&box)?box.scrollTop:0;
   var act=(typeof document!=="undefined")?document.activeElement:null;
-  var focus=(act&&act.id==="exq")?{id:"exq",at:act.selectionStart}:null;
+  /* the two search boxes: a redraw underneath somebody who is typing must
+     not take the caret with it */
+  var focus=(act&&(act.id==="exq"||act.id==="findq"))
+    ? {id:act.id,at:act.selectionStart} : null;
   renderView();
   lastKey=key;
   if(top){ box=scrollBox(); if(box) box.scrollTop=top; }
@@ -842,9 +925,11 @@ function renderView(){
   /* Signed out on a server, nothing else renders: no calendar, no crew, no
      way to log a set into a store that belongs to somebody else. */
   if(API===null) return renderSplash();
-  /* an invite link opens the join door instead of the sign-in door; somebody
-     already signed in just gets the app, the code being no use to them */
+  /* an invite link opens the join door instead of the sign-in door -- and it
+     opens a one-button version of it for somebody already signed in, who has
+     no account to make but does have a follow to accept */
   if(API===true&&!SY.user) return JOIN.code?renderJoin():renderGate();
+  if(API===true&&SY.user&&JOIN.code) return renderJoinIn();
   if(view.name==="home")renderHome();
   else if(view.name==="session")renderSession();
   else if(view.name==="data")renderData();
@@ -895,9 +980,9 @@ function calendar(){
    div, not a button -- the whole session is already on the card, so there is
    nothing to open. */
 /* Who is in the crew, drawn above the feed. It answers the question an empty
-   feed cannot: nobody is missing, there is simply nobody else yet. The crew is
-   not a group you join -- it is every account on the server. Two ways in: an
-   invite link from the profile screen, or `worker/adduser.mjs` by hand. */
+   feed cannot: nobody is missing, there is simply nobody else yet. Since the
+   follow graph landed, "your crew" is the people you follow -- you first, then
+   them in the order you followed them. */
 function crewRoster(){
   var crew=SY.crew||[];
   if(!crew.length) return "";
@@ -909,22 +994,30 @@ function crewRoster(){
       '<span class="nm">'+esc(firstName(c.name))+'</span>'+
       (me?'<span class="you">You</span>':'')+'</span>';
   }).join("");
+  var c=SY.counts||{following:0,followers:0};
   return '<div class="roster"><div class="eyebrow">'+
-    (crew.length===1?'Your crew':'Your crew &middot; '+crew.length+' people')+
+    (crew.length===1?'Your crew':'Your crew &middot; '+plural(c.following,"following")+
+      ' &middot; '+plural(c.followers,"follower"))+
     '</div><div class="rosterrow">'+discs+'</div>'+
     (crew.length===1
-      ? '<p class="rosternote">It is just you so far. Everyone with an account '+
-        'on this server is in the crew. Invite somebody from your profile '+
-        '&mdash; the link works once and expires after 48 hours.</p>'
+      ? '<p class="rosternote">It is just you so far. Search for somebody above, '+
+        'or send an invite link &mdash; a link makes the two of you follow each '+
+        'other, and it expires after 48 hours.</p>'
       : '')+'</div>';
 }
 function crewHTML(){
-  var items=crewFeed(), top=crewRoster();
+  var tools=crewTools()+inviteFreshHTML();
+  /* searching takes over the tab: the roster and the feed are about people you
+     already follow, and neither answers "where is Sam" */
+  if(FIND.q.trim()) return tools+'<div id="findlist">'+findHTML()+'</div>';
+  var items=crewFeed(), top=tools+crewRoster();
   if(!items.length){
     if(API===false) return '<div class="empty">The crew feed needs the server.<br>'+
       'This copy runs on its own.</div>';
     return top+'<div class="empty">Nothing here yet.<br>'+
-      'Finish a workout and it shows up for the crew.</div>';
+      (SY.crew&&SY.crew.length>1
+        ? 'Finish a workout, or wait for somebody you follow to share one.'
+        : 'Follow somebody, or finish a workout and share it.')+'</div>';
   }
   return top+'<div class="list">'+items.map(function(s){
     var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
@@ -944,6 +1037,67 @@ function crewHTML(){
           exSummary(kindOf(x),x.sets)+'</span></div>';
       }).join("")+'</div>'+socialHTML(s)+'</div>';}).join("")+'</div>';
 }
+/* ---------- finding people, and following them ----------
+   Instant, like Twitter: the button is a write, not a request. Somebody you
+   follow shows up on your crew tab; somebody who follows YOU sees whatever
+   you have marked Shared. */
+function paint(id,html){var e=document.getElementById(id); if(e) e.innerHTML=html;}
+function crewTools(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="crewbar">'+
+    '<input class="search" id="findq" placeholder="Find people" autocomplete="off" '+
+      'spellcheck="false" value="'+esc(FIND.q)+'" oninput="findPeople()">'+
+    '<button class="btn ghost" onclick="newInvite()">Invite</button></div>';
+}
+function findPeople(){
+  var el=document.getElementById("findq");
+  var was=FIND.q.trim()!=="";
+  FIND.q=el?String(el.value||""):"";
+  var now=FIND.q.trim()!=="";
+  /* an emptied box goes back to the roster and the feed */
+  if(!now){ FIND.people=null; findSeq++; return render(); }
+  /* the first keystroke swaps the screen; the rest only redraw the results,
+     or the box would lose focus on every letter -- same rule as the exercise
+     search, for the same reason */
+  FIND.people=null;
+  if(!was) render(); else paint("findlist",findHTML());
+  var n=++findSeq;
+  apiFetch("/api/users?q="+encodeURIComponent(FIND.q.trim())).then(function(j){
+    if(n!==findSeq) return;              /* a later keystroke already won */
+    FIND.people=j.people||[]; paint("findlist",findHTML());
+  },function(){
+    if(n!==findSeq) return;
+    FIND.people=[]; paint("findlist",findHTML());
+  });
+}
+function findHTML(){
+  if(FIND.people===null) return '<p class="rosternote">Searching\u2026</p>';
+  if(!FIND.people.length)
+    return '<p class="rosternote">Nobody matching \u201c'+esc(FIND.q.trim())+'\u201d.</p>';
+  return '<div class="findlist">'+FIND.people.map(function(u){
+    var per=u.mine?"me":((FEEDP[u.id]||{}).person||"p1");
+    return '<div class="findrow"><span class="who" data-person="'+per+'">'+
+      '<span class="avatar">'+esc(u.initials||initials(u.name))+'</span>'+
+      '<span><span class="nm">'+esc(u.name)+'</span>'+
+      '<span class="at">@'+esc(u.username)+'</span></span></span>'+
+      (u.mine?'<span class="you">You</span>'
+        :'<button class="follow'+(u.following?' on':'')+'" aria-pressed="'+!!u.following+
+         '" onclick="toggleFollow(\''+jstr(u.id)+'\')">'+
+         (u.following?'Following':'Follow')+'</button>')+'</div>';
+  }).join("")+'</div>';
+}
+/* Optimistic, like the like button: the tap shows immediately and the sync
+   that follows is what makes it true. A refusal puts it back. */
+function toggleFollow(id){
+  var row=(FIND.people||[]).filter(function(u){return u.id===id;})[0];
+  if(!row) return;
+  var on=!row.following;
+  row.following=on; paint("findlist",findHTML());
+  apiFetch("/api/follow",{method:"POST",body:JSON.stringify({id:id,on:on})})
+    .then(function(){ sync(); },
+          function(){ row.following=!on; paint("findlist",findHTML()); });
+}
+
 /* where a workout came from, or how far it travelled */
 function lineage(s){
   if(s.from) return '<div class="fromline">&#8635; '+
@@ -1138,7 +1292,7 @@ function renderSession(){
     (live?'<button class="back" onclick="askCancel()">Cancel workout</button>'
      :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>'
      :'<button class="back" onclick="toggleShare()">'+
-        (s.shared?'&check; Shared':'Share to crew')+'</button>')+
+        (s.shared?'&check; Shared':'Share to followers')+'</button>')+
     '</header>'+scroll(head+cards+empty);
   BAR.innerHTML = live
     ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
@@ -1209,27 +1363,46 @@ function authSection(){
     'Export below to move it somewhere.</p></div>';
   if(API===null) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>Checking for a server\u2026</p></div>';
-  if(SY.user) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
-    '<p>Signed in as <b>'+esc(SY.user.name)+'</b>. '+
+  if(SY.user){
+    var c=SY.counts||{following:0,followers:0};
+    return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Signed in as <b>'+esc(SY.user.name)+'</b>'+
+    (SY.user.username?' &middot; <b>@'+esc(SY.user.username)+'</b>':'')+'. '+
     (syncMsg?esc(syncMsg):'Your workouts follow you to every device you sign in on.')+'</p>'+
+    '<p class="rosternote">'+plural(c.following,"person")+' followed &middot; '+
+      plural(c.followers,"follower")+'. Anybody following you sees the workouts '+
+      'you mark Shared, and nothing else.</p>'+
     '<div class="datarow">'+
     '<button class="btn ghost" onclick="askSignOut()">Sign out</button></div></div>';
+  }
   return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>Sign in to keep these workouts on every device. Anything already logged '+
     'here is uploaded, not replaced.</p>'+signInForm()+'</div>';
 }
-/* One form, two homes: the door, and the data screen on a standalone copy
-   that later finds a server. Two of these would drift. */
+/* One form, three homes: the front door, the join door, and the profile
+   screen on a standalone copy that later finds a server. Three of these would
+   drift. It carries both halves -- signing in and signing up -- because they
+   differ by one field and a verb. */
 function signInForm(){
+  var isNew=GATE.mode==="new";
   return (SY.google
-      ? '<a class="btn link" href="/api/auth/google/start">Continue with Google</a>'+
-        '<div class="orline">or</div>'
+      ? '<a class="btn link" href="/api/auth/google/start'+
+          (JOIN.code?'?invite='+encodeURIComponent(JOIN.code):'')+
+          '">Continue with Google</a><div class="orline">or</div>'
       : '')+
-    '<input class="fld" id="loginname" placeholder="Name" autocomplete="username">'+
-    '<input class="fld" id="loginpin" type="password" inputmode="numeric" '+
-      'placeholder="PIN" autocomplete="current-password">'+
-    '<div class="datarow"><button class="btn" onclick="signIn()">Sign in</button></div>'+
-    '<div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div>';
+    (isNew?'<input class="fld" id="newdisplay" placeholder="Your name" autocomplete="name">':'')+
+    '<input class="fld" id="loginname" placeholder="Username" autocomplete="username" '+
+      'autocapitalize="none" spellcheck="false">'+
+    '<input class="fld" id="loginpass" type="password" placeholder="'+
+      (isNew?'Password, 8 characters or more':'Password')+'" autocomplete="'+
+      (isNew?'new-password':'current-password')+'">'+
+    '<div class="datarow"><button class="btn" onclick="'+
+      (isNew?'createAccount()':'signIn()')+'">'+
+      (isNew?'Create account':'Sign in')+'</button></div>'+
+    '<p class="gateswap">'+(isNew
+      ? 'Already have an account? <button class="link2" onclick="gateMode(\'in\')">Sign in</button>'
+      : 'New here? <button class="link2" onclick="gateMode(\'new\')">Create an account</button>')+
+    '</p><div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div>';
 }
 /* The two pre-app screens. They share the shell so the door does not jump
    when /api/me answers. */
@@ -1237,50 +1410,86 @@ function gateShell(body){
   V.innerHTML=scroll('<div class="gate"><div class="brandmark">Rack Log<s></s></div>'+body+'</div>');
   BAR.innerHTML="";
 }
-function renderSplash(){ gateShell('<p class="gatesub">Checking your sign-in…</p>'); }
+function renderSplash(){
+  V.innerHTML='<img class="splash" src="/splash.jpg" alt="Rack Log — Track Your Grits. Log Your Lifts.">';
+  BAR.innerHTML="";
+}
+/* The invite door, for somebody who is NOT signed in. Since signup opened,
+   this is the same form as the front door -- what an invite adds is the
+   sentence at the top and the follow it writes on both sides. */
+function inviteLine(){
+  return (JOIN.from?'<b>'+esc(firstName(JOIN.from))+'</b> wants you to join their crew. '
+                   :'You\u2019ve been invited to a crew. ')+
+    'Create your account or sign in to join.';
+}
+function deadInvite(){
+  return gateShell('<p class="gatesub">'+esc(JOIN.error)+'</p>'+
+    '<div class="datarow"><a class="btn link" href="/">Go to Rack Log</a></div>');
+}
 function renderJoin(){
   if(JOIN.state!=="ok"&&JOIN.state!=="bad")
     return gateShell('<p class="gatesub">Checking that invite\u2026</p>');
-  if(JOIN.state==="bad")
-    return gateShell('<p class="gatesub">'+esc(JOIN.error)+'</p>'+
-      '<div class="datarow"><a class="btn link" href="/">Go to sign in</a></div>');
-  gateShell('<p class="gatesub">'+
-    (JOIN.from?esc(firstName(JOIN.from))+'\u2019s invited you to the crew. '
-             :'You\u2019ve been invited to the crew. ')+
-    'Pick the name you want on your workouts, and a PIN to sign in with.</p>'+
-    (SY.google
-      ? '<a class="btn link" href="/api/auth/google/start?invite='+
-          encodeURIComponent(JOIN.code)+'">Continue with Google</a>'+
-        '<div class="orline">or</div>'
-      : '')+
-    '<input class="fld" id="joinname" placeholder="Name" autocomplete="name">'+
-    '<input class="fld" id="joinpin" type="password" inputmode="numeric" '+
-      'placeholder="PIN, 6 to 12 digits" autocomplete="new-password">'+
-    '<div class="datarow"><button class="btn" onclick="doJoin()">Join the crew</button></div>'+
+  if(JOIN.state==="bad") return deadInvite();
+  gateShell('<p class="gatesub">'+inviteLine()+'</p>'+signInForm());
+}
+/* The invite door for somebody who ALREADY has an account. There is nothing to
+   create, so it is one button -- and it still spends the code, because a link
+   that keeps working after it is used is not what was handed out. */
+function renderJoinIn(){
+  if(JOIN.state!=="ok"&&JOIN.state!=="bad")
+    return gateShell('<p class="gatesub">Checking that invite\u2026</p>');
+  if(JOIN.state==="bad") return deadInvite();
+  gateShell('<p class="gatesub">'+inviteLine().replace(
+      "Create your account or sign in to join.",
+      "You are signed in as <b>"+esc(SY.user.name)+"</b>.")+'</p>'+
+    '<div class="datarow"><button class="btn" onclick="acceptInvite()">Join the crew</button></div>'+
+    '<p class="gateswap"><button class="link2" onclick="dismissJoin()">Not now</button></p>'+
     '<div class="msg" id="joinmsg"></div>');
 }
-function doJoin(){
-  var n=document.getElementById("joinname"), k=document.getElementById("joinpin");
-  var name=n?String(n.value||"").trim():"", pin=k?String(k.value||"").trim():"";
-  if(!name) return msg("joinmsg","Enter the name you want on your workouts.",true);
-  /* six, not four: this URL is public and four digits is 10,000 guesses */
-  if(!/^\d{6,12}$/.test(pin)) return msg("joinmsg","Pick a PIN of 6 to 12 digits.",true);
+function acceptInvite(){
   msg("joinmsg","Joining\u2026",false);
-  apiFetch("/api/join",{method:"POST",body:JSON.stringify({code:JOIN.code,name:name,pin:pin})})
-    .then(function(j){
-      SY.user=j.user; JOIN.code=""; JOIN.state=""; syncMsg="";
-      loadStore(j.user.id); openThread=null; view={name:"home"};
-      /* take the code out of the address bar: it is spent, and it has no
-         business sitting in history or in a screenshot of the browser */
-      if(typeof history!=="undefined"&&history.replaceState)
-        try{ history.replaceState(null,"","/"); }catch(e){}
-      render(); sync();
-    },function(e){ msg("joinmsg",(e&&e.message)||"Couldn\u2019t join.",true); });
+  apiFetch("/api/invite/"+encodeURIComponent(JOIN.code)+"/accept",{method:"POST"})
+    .then(function(){ dismissJoin(); sync(); },
+          function(e){ msg("joinmsg",(e&&e.message)||"Couldn\u2019t join.",true); });
+}
+function dismissJoin(){
+  JOIN.code=""; JOIN.state=""; stripJoin();
+  view={name:"home"}; S.tab="history"; S.home="crew"; render();
 }
 function renderGate(){
-  gateShell('<p class="gatesub">Sign in to log a workout. Your history follows you '+
-    'to every device you sign in on.</p>'+signInForm());
+  gateShell('<p class="gatesub">'+(GATE.mode==="new"
+    ? 'Pick a username and a password. Nothing you log is visible to anybody '+
+      'until you share a workout, and a shared workout only reaches the people '+
+      'who follow you.'
+    : 'Sign in to log a workout. Your history follows you to every device you '+
+      'sign in on.')+'</p>'+signInForm());
 }
+/* Changing a password, which is only possible now that there is one to
+   change. Every other session stays signed in on purpose -- the family shares
+   devices, and signing every phone out would be a surprise, not a safeguard. */
+function passwordSection(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="datasec"><div class="eyebrow">Password</div>'+
+    '<input class="fld" id="pwold" type="password" placeholder="Current password" '+
+      'autocomplete="current-password">'+
+    '<input class="fld" id="pwnew" type="password" '+
+      'placeholder="New password, 8 characters or more" autocomplete="new-password">'+
+    '<div class="datarow"><button class="btn ghost" onclick="changePassword()">'+
+      'Change password</button></div>'+
+    '<div class="msg" id="pwmsg"></div></div>';
+}
+function changePassword(){
+  var a=document.getElementById("pwold"), b=document.getElementById("pwnew");
+  var cur=a?String(a.value||""):"", next=b?String(b.value||""):"";
+  if(!cur) return msg("pwmsg","Enter your current password.",true);
+  if(next.length<8) return msg("pwmsg","Passwords need at least 8 characters.",true);
+  msg("pwmsg","Changing\u2026",false);
+  apiFetch("/api/password",{method:"POST",body:JSON.stringify({current:cur,next:next})})
+    .then(function(){ if(a) a.value=""; if(b) b.value="";
+            msg("pwmsg","Changed. Your other devices stay signed in.",false); },
+          function(e){ msg("pwmsg",(e&&e.message)||"Couldn\u2019t change it.",true); });
+}
+
 /* ---------- invites ----------
    Anybody signed in can invite, and everybody can see every invite. That is
    deliberate for a household: there is no admin role here, and an invite that
@@ -1304,9 +1513,12 @@ function inviteFreshHTML(){
     '<input class="fld" id="invitelink" readonly value="'+esc(INV.fresh.url)+'">'+
     '<div class="datarow"><button class="btn" onclick="copyInvite()">Copy link</button></div>'+
     '<p class="rosternote">Expires '+esc(untilStr(INV.fresh.expires))+', and works '+
-      'once. This is the only time the link is shown \u2014 if you lose it, cancel '+
-      'it below and make another.</p>'+
-    '<div class="msg" id="invmsg"></div></div>';
+      'once. Whoever takes it follows you, and you follow them. This is the only '+
+      'time the link is shown \u2014 if you lose it, cancel it on your profile and '+
+      'make another.</p>'+
+    '<div class="msg" id="invmsg"></div>'+
+    '<div class="datarow"><button class="btn ghost" onclick="dismissInvite()">Done'+
+      '</button></div></div>';
 }
 function inviteRowsHTML(){
   if(INV.list===null) return '<p class="rosternote">Loading\u2026</p>';
@@ -1324,15 +1536,16 @@ function inviteRowsHTML(){
 function crewSection(){
   if(API!==true||!SY.user) return "";
   return '<div class="datasec"><div class="eyebrow">Invite someone</div>'+
-    '<p>An invite link makes one account and expires after 48 hours. Whoever '+
-    'joins is in the crew &mdash; they see every shared workout, and there is no '+
-    'undoing that short of deleting their account.</p>'+
+    '<p>An invite link works once and expires after 48 hours. Whoever takes it '+
+    'follows you and you follow them, so you each see what the other marks '+
+    'Shared. Unfollowing undoes it.</p>'+
     inviteFreshHTML()+
     '<div class="datarow"><button class="btn ghost" onclick="newInvite()">'+
       'Create an invite link</button></div>'+
     (INV.msg?'<div class="msg bad">'+esc(INV.msg)+'</div>':'')+
     inviteRowsHTML()+'</div>';
 }
+function dismissInvite(){ INV.fresh=null; render(); }
 function newInvite(){
   INV.msg=""; INV.fresh=null;
   apiFetch("/api/invites",{method:"POST"}).then(function(j){
@@ -1366,7 +1579,7 @@ function renderData(){
       '<div class="datasec"><div class="eyebrow">Logged</div><p>'+
         plural(n,"finished session")+(t?', <span class="num">'+
         Math.round(t).toLocaleString()+'</span> lb moved in total':'')+'.</p></div>'+
-      authSection()+crewSection());
+      authSection()+passwordSection()+crewSection());
   BAR.innerHTML=homeBar(false);
 }
 function openData(){view={name:"data",from:view};INV.msg="";render();loadInvites();}
@@ -1476,7 +1689,10 @@ function startFrom(item){
 /* Sharing is now the DEFAULT — finish() sets it — because a crew feed nobody
    posts to is an empty screen, and the family asked for the feed. This is the
    opt-out: it clears the flag, the next sync clears it on the server, and the
-   workout drops off everyone else's Crew tab. */
+   workout drops off everyone else's Crew tab.
+   Who "everyone else" is changed on 2026-08-29: it is the people who follow
+   you, not every account on the server, and anybody can follow you without
+   being asked. Shared means shared. */
 function toggleShare(){
   var s=S.sessions.filter(function(x){return x.id===view.id;})[0];
   if(!s) return;

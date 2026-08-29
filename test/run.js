@@ -576,12 +576,23 @@ function fakeServer() {
     feed: [], social: {}, people: {}, crew: [], posts: [],
     /* invites. Codes here are 32 digits rather than 32 hex characters --
        digits are hex, and it keeps them readable in a failure message. */
-    invites: [], joins: 0, codes: 0,
+    invites: [], joins: 0, codes: 0, passwords: 0, followWrites: 0,
+    /* accounts and the follow graph. `me` is whoever the cookie would name. */
+    me: "me",
+    users: [{ id: "me", username: "mark", name: "Mark Miller", initials: "MM",
+              password: "longenough1" }],
+    follows: new Set(),          /* "<follower>><followee>" */
+    follow(a, b) { api.follows.add(a + ">" + b); },
+    mutual(a, b) { return api.follows.has(a + ">" + b) && api.follows.has(b + ">" + a); },
+    user(id) { return api.users.find(u => u.id === id); },
+    pubUser(u) {
+      return { id: u.id, name: u.name, initials: u.initials, username: u.username };
+    },
     mkInvite(over) {
       const n = ++api.codes;
       const row = Object.assign(
         { id: "i" + n, code: String(n).padStart(32, "0"), createdBy: "Mark Miller",
-          created: Date.now(), expires: Date.now() + 48 * 3600e3,
+          by: "me", created: Date.now(), expires: Date.now() + 48 * 3600e3,
           usedBy: null, revoked: 0 }, over || {});
       api.invites.push(row);
       return row;
@@ -614,7 +625,72 @@ function fakeServer() {
       else if (p === "/api/logout") out = { ok: true };
       else if (p === "/api/feed")
         out = { now: ++api.clock, items: api.feed, social: api.social,
-                people: api.people, crew: api.crew };
+                people: api.people, crew: api.crew,
+                counts: { following: Math.max(0, api.crew.length - 1),
+                          followers: [...api.follows].filter(k => k.endsWith(">" + api.me)).length } };
+      else if (p === "/api/login" && method === "POST") {
+        const u = api.users.find(x => x.username === String((body && body.username) || ""));
+        if (!u || u.password !== String((body && body.password) || "")) {
+          status = 401; out = { error: "Wrong username or password." };
+        } else { api.me = u.id; out = { user: api.pubUser(u) }; }
+      }
+      else if (p === "/api/signup" && method === "POST") {
+        const username = String((body && body.username) || "");
+        const password = String((body && body.password) || "");
+        const display = String((body && body.name) || "").trim();
+        const r = api.invites.find(i => i.code === String((body && body.code) || ""));
+        const bad = (body && body.code) ? api.inviteError(r) : null;
+        if (!display) { status = 400; out = { error: "Enter the name you want on your workouts." }; }
+        else if (!/^[a-z0-9][a-z0-9._]{2,19}$/.test(username)) {
+          status = 400; out = { error: "Usernames are 3 to 20 characters." };
+        } else if (password.length < 8) {
+          status = 400; out = { error: "Passwords need at least 8 characters." };
+        } else if (api.users.some(u => u.username === username)) {
+          status = 409; out = { error: "That username is taken." };
+        } else if (bad) { status = bad[0]; out = { error: bad[1] }; }
+        else {
+          const u = { id: "u" + (api.users.length + 1), username, name: display,
+                      initials: "XX", password };
+          api.users.push(u);
+          api.me = u.id;
+          if (r) { r.usedBy = display; api.follow(u.id, r.by); api.follow(r.by, u.id); }
+          out = { user: api.pubUser(u) };
+        }
+      }
+      else if (p === "/api/password" && method === "POST") {
+        const u = api.user(api.me);
+        if (!u || u.password !== String((body && body.current) || "")) {
+          status = 401; out = { error: "That is not your current password." };
+        } else if (String((body && body.next) || "").length < 8) {
+          status = 400; out = { error: "Passwords need at least 8 characters." };
+        } else { u.password = body.next; api.passwords++; out = { ok: true }; }
+      }
+      else if (p === "/api/users" && method === "GET") {
+        const q = (new URLSearchParams(qs || "").get("q") || "").toLowerCase();
+        out = { people: api.users
+          .filter(u => u.username.indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0)
+          .map(u => Object.assign(api.pubUser(u), {
+            following: api.follows.has(api.me + ">" + u.id), mine: u.id === api.me })) };
+      }
+      else if (p === "/api/follow" && method === "POST") {
+        const id = String((body && body.id) || "");
+        if (!api.user(id)) { status = 404; out = { error: "No such person." }; }
+        else {
+          api.followWrites++;
+          if (body.on) api.follow(api.me, id); else api.follows.delete(api.me + ">" + id);
+          out = { id, following: !!body.on };
+        }
+      }
+      else if (method === "POST" && /^\/api\/invite\/[^/]+\/accept$/.test(p)) {
+        const r = api.invites.find(i => i.code === p.split("/")[3]);
+        const bad = api.inviteError(r);
+        if (bad) { status = bad[0]; out = { error: bad[1] }; }
+        else {
+          r.usedBy = (api.user(api.me) || {}).name || api.me;
+          api.follow(api.me, r.by); api.follow(r.by, api.me);
+          out = { ok: true, followed: r.by };
+        }
+      }
       else if (p === "/api/social" && method === "POST") { api.posts.push(body); out = { ok: true }; }
       else if (p.startsWith("/api/invite/")) {
         const r = api.invites.find(i => i.code === p.slice("/api/invite/".length));
@@ -749,8 +825,8 @@ function fakeServer() {
      sandbox.authSection().indexOf("/api/auth/google/start") >= 0);
   ok("and it is a link, not a fetch button \u2014 OAuth is a top-level navigation",
      /<a class="btn link" href="\/api\/auth\/google\/start">/.test(sandbox.authSection()));
-  ok("the PIN form is still there alongside it",
-     sandbox.authSection().indexOf('id="loginpin"') >= 0);
+  ok("the password form is still there alongside it",
+     sandbox.authSection().indexOf('id="loginpass"') >= 0);
 
   /* a server without credentials must not advertise it */
   sandbox.SY.google = false;
@@ -767,7 +843,9 @@ function fakeServer() {
   group("The door");
   sandbox.API = null;
   sandbox.render();
-  ok("before the server answers, only a splash", viewHTML().indexOf("Checking your sign-in") >= 0);
+  ok("before the server answers, only the branded splash",
+     viewHTML().indexOf('class="splash"') >= 0 &&
+     viewHTML().indexOf('src="/splash.jpg"') >= 0);
   eq("and no bottom nav to tap", barHTML(), "");
 
   sandbox.API = true;
@@ -776,7 +854,9 @@ function fakeServer() {
   sandbox.view = { name: "home" };
   sandbox.render();
   ok("signed out on a server, the door is all there is",
-     viewHTML().indexOf('id="loginpin"') >= 0 && viewHTML().indexOf("calgrid") < 0);
+     viewHTML().indexOf('id="loginpass"') >= 0 && viewHTML().indexOf("calgrid") < 0);
+  ok("and it offers a way to make an account, not only to use one",
+     viewHTML().indexOf("gateMode('new')") >= 0);
   ok("no calendar, no crew, no export", viewHTML().indexOf("openData()") < 0);
   ok("and no way to start a workout", barHTML().indexOf("startWorkout()") < 0);
   sandbox.view = { name: "data" };
@@ -839,7 +919,7 @@ function fakeServer() {
   eq("the workouts leave memory", S().sessions.length, 0);
   ok("and the account's store leaves the phone", !store.has(keyOf("ann")));
   sandbox.render();
-  ok("the door is showing again", viewHTML().indexOf('id="loginpin"') >= 0);
+  ok("the door is showing again", viewHTML().indexOf('id="loginpass"') >= 0);
 
   /* the one case where the data stays: it never made it to the server */
   sandbox.SY.user = { id: "ann", name: "Ann Miller", initials: "AM" };
@@ -999,10 +1079,11 @@ function fakeServer() {
                { id: "danny", name: "Danny Ruiz", initials: "DR" },
                { id: "sam", name: "Sam Okonkwo", initials: "SO" },
                { id: "tess", name: "Tess Lindqvist", initials: "TL" }];
+  for (const c of crew.crew) if (!c.mine) crew.follow("me", c.id);
   await sandbox.sync();
   sandbox.setHome("crew");
   ok("the crew tab says who is in the crew", viewHTML().indexOf('class="roster"') >= 0);
-  ok("it counts them", viewHTML().indexOf("4 people") >= 0);
+  ok("it counts them", viewHTML().indexOf("3 following") >= 0);
   ok("somebody who has never shared is still on the roster",
      viewHTML().indexOf(">Sam<") >= 0);
   ok("and so is somebody who only ever commented", viewHTML().indexOf(">Tess<") >= 0);
@@ -1012,7 +1093,9 @@ function fakeServer() {
   crew.crew = [{ id: "me", name: "Mark Miller", initials: "MM", mine: true }];
   await sandbox.sync();
   ok("alone, it says the crew is just you", viewHTML().indexOf("just you") >= 0);
-  ok("and how somebody gets added", viewHTML().indexOf("Invite somebody") >= 0);
+  ok("and how somebody gets added",
+     viewHTML().indexOf("Search for somebody") >= 0 &&
+     viewHTML().indexOf("invite link") >= 0);
   ok("the roster shows even with nothing in the feed",
      viewHTML().indexOf('class="roster"') >= 0 &&
      viewHTML().indexOf("Nothing here yet") >= 0);
@@ -1063,8 +1146,9 @@ function fakeServer() {
 
   /* ---- 23. joining by an invite link ----
    * The code arrives on the URL, because the link gets texted to somebody.
-   * Everything here is the door BEFORE there is an account, which is the one
-   * screen a stranger sees -- so it has to be right without a second try.
+   * Since signup opened, an invite is no longer the door -- it is the
+   * handshake -- so this door has to work for a stranger AND for somebody who
+   * already has an account.
    */
   group("Joining by an invite link");
   const inv = fakeServer();
@@ -1076,6 +1160,7 @@ function fakeServer() {
   sandbox.history = { replaceState() { replaced++; } };
   /* a real timer turn, which drains every pending promise the fetch made */
   const settle = () => new Promise((r) => setTimeout(r, 0));
+  const field = (id) => sandbox.document.getElementById(id);
   const open = async (code) => {
     sandbox.location = { pathname: code ? "/join/" + code : "/" };
     sandbox.JOIN = { code: "", state: "", from: null, error: "" };
@@ -1091,70 +1176,134 @@ function fakeServer() {
 
   const good = inv.mkInvite();
   await open(good.code);
-  ok("an invite link opens the join door, not the sign-in door",
-     viewHTML().indexOf('id="joinpin"') >= 0 && viewHTML().indexOf('id="loginpin"') < 0);
-  ok("it says who invited you", viewHTML().indexOf("Mark\u2019s invited you") >= 0);
-  ok("and asks for a name to put on your workouts",
-     viewHTML().indexOf('id="joinname"') >= 0);
+  ok("an invite link says who wants you, in their words",
+     viewHTML().indexOf("<b>Mark</b> wants you to join their crew.") >= 0);
+  ok("and what to do about it",
+     viewHTML().indexOf("Create your account or sign in to join.") >= 0);
+  ok("it opens on the sign-up half, since a stranger has no account",
+     viewHTML().indexOf('id="newdisplay"') >= 0 &&
+     viewHTML().indexOf("createAccount()") >= 0);
+  ok("with a way over to signing in", viewHTML().indexOf("gateMode('in')") >= 0);
 
   /* the three dead links, each said plainly instead of a shrug */
   await open(inv.mkInvite({ expires: Date.now() - 1000 }).code);
-  ok("an expired link says so before asking anybody to pick a PIN",
-     viewHTML().indexOf("expired") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
+  ok("an expired link says so before asking anybody to pick a username",
+     viewHTML().indexOf("expired") >= 0 && viewHTML().indexOf('id="loginpass"') < 0);
   await open(inv.mkInvite({ usedBy: "Somebody Else" }).code);
   ok("a spent link says it is spent", viewHTML().indexOf("already been used") >= 0);
   await open("0000000000000000000000000000ffff");
   ok("a code nobody ever issued is refused",
-     viewHTML().indexOf("not valid") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
-  ok("and every dead end still offers the sign-in door",
+     viewHTML().indexOf("not valid") >= 0 && viewHTML().indexOf('id="loginpass"') < 0);
+  ok("and every dead end still offers the way in",
      viewHTML().indexOf('href="/"') >= 0);
 
-  /* the PIN rule is six digits, not four: this URL is public */
+  /* nothing malformed reaches the server: it is a round trip that can only
+     ever say no, and the answer is already known here */
   await open(good.code);
-  sandbox.document.getElementById("joinname").value = "Robin Miller";
-  sandbox.document.getElementById("joinpin").value = "1234";
-  const tries = inv.joins;
-  sandbox.doJoin();
-  eq("a four-digit PIN never reaches the server", inv.joins, tries);
-  ok("and it says what is wanted instead",
-     sandbox.document.getElementById("joinmsg").textContent.indexOf("6 to 12 digits") >= 0);
-  sandbox.document.getElementById("joinname").value = "";
-  sandbox.document.getElementById("joinpin").value = "778899";
-  sandbox.doJoin();
-  eq("neither does a blank name", inv.joins, tries);
+  const before = inv.users.length;
+  field("newdisplay").value = "";
+  field("loginname").value = "robin";
+  field("loginpass").value = "longenough1";
+  sandbox.createAccount();
+  ok("a blank display name is refused here",
+     field("authmsg").textContent.indexOf("name you want") >= 0);
+  field("newdisplay").value = "Robin Miller";
+  field("loginname").value = "Robin Miller";
+  sandbox.createAccount();
+  ok("so is a username with a space in it",
+     field("authmsg").textContent.indexOf("3 to 20 characters") >= 0);
+  field("loginname").value = "robin";
+  field("loginpass").value = "short";
+  sandbox.createAccount();
+  ok("and a password under eight characters",
+     field("authmsg").textContent.indexOf("8 characters") >= 0);
+  eq("none of which made an account", inv.users.length, before);
 
-  sandbox.document.getElementById("joinname").value = "Robin Miller";
-  sandbox.doJoin();
+  field("loginpass").value = "longenough1";
+  sandbox.createAccount();
   await settle();
-  ok("joining signs you in", sandbox.SY.user && sandbox.SY.user.name === "Robin Miller");
+  ok("a good one signs you in", sandbox.SY.user && sandbox.SY.user.name === "Robin Miller");
+  eq("under the username you picked", sandbox.SY.user.username, "robin");
   eq("the invite is spent by it", inv.invites.find(i => i.id === good.id).usedBy,
      "Robin Miller");
+  ok("and it makes the two of you follow each other",
+     inv.mutual(sandbox.SY.user.id, "me"));
   eq("the code is taken out of the address bar", replaced, 1);
   eq("and the join screen is done with", sandbox.JOIN.code, "");
   sandbox.render();
   eq("you land on the calendar", screen(), "home/calendar");
   eq("with no workouts to your name yet", S().sessions.length, 0);
 
+  /* the other half of "create your account or sign in": somebody who already
+     has one, following a link from a phone that is signed out */
+  inv.users.push({ id: "danny", username: "danny", name: "Danny Ruiz",
+                   initials: "DR", password: "dannypassword" });
+  const fromDanny = inv.mkInvite({ by: "danny", createdBy: "Danny Ruiz" });
+  sandbox.SY.user = null;
+  await open(fromDanny.code);
+  ok("the link names whoever sent it, not whoever it reaches",
+     viewHTML().indexOf("<b>Danny</b> wants you") >= 0);
+  sandbox.gateMode("in");
+  ok("switching to Sign in drops the display-name field",
+     viewHTML().indexOf('id="newdisplay"') < 0 && viewHTML().indexOf("signIn()") >= 0);
+  field("loginname").value = "mark";
+  field("loginpass").value = "longenough1";
+  sandbox.signIn();
+  await settle();
+  eq("signing in through an invite signs you in", sandbox.SY.user.username, "mark");
+  ok("spends the code", !!inv.invites.find(i => i.id === fromDanny.id).usedBy);
+  ok("and follows you both ways", inv.mutual("me", "danny"));
+  eq("the code leaves the address bar there too", replaced, 2);
+
   sandbox.SY.user = null;
   sandbox.SY.google = true;
   const viaGoogle = inv.mkInvite();
   await open(viaGoogle.code);
-  ok("the Google door carries the invite with it, or it would sign nobody up",
+  ok("the Google door carries the invite with it, or it would connect nobody",
      viewHTML().indexOf("/api/auth/google/start?invite=" + viaGoogle.code) >= 0);
   sandbox.SY.google = false;
 
-  /* ---- 24. handing one out ---- */
+  /* ---- 24. an invite that reaches somebody already signed in ---- */
+  group("An invite you open while signed in");
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM", username: "mark" };
+  inv.me = "me";
+  sandbox.loadStore("me");
+  const waiting = inv.mkInvite({ by: "danny", createdBy: "Danny Ruiz" });
+  await open(waiting.code);
+  ok("there is no form to fill in, because there is no account to make",
+     viewHTML().indexOf('id="loginpass"') < 0 && viewHTML().indexOf('id="newdisplay"') < 0);
+  ok("it says who is asking and who you are",
+     viewHTML().indexOf("<b>Danny</b> wants you") >= 0 &&
+     viewHTML().indexOf("signed in as <b>Mark Miller</b>") >= 0);
+  ok("and offers one button", viewHTML().indexOf("acceptInvite()") >= 0);
+  ok("with a way to decline it", viewHTML().indexOf("dismissJoin()") >= 0);
+
+  inv.follows.delete("me>danny"); inv.follows.delete("danny>me");
+  sandbox.acceptInvite();
+  await settle();
+  ok("accepting follows you both ways", inv.mutual("me", "danny"));
+  ok("spends the code", !!inv.invites.find(i => i.id === waiting.id).usedBy);
+  eq("clears the invite", sandbox.JOIN.code, "");
+  eq("takes it out of the address bar", replaced, 3);
+  eq("and drops you on the crew tab, where they now are", S().home, "crew");
+
+  const declined = inv.mkInvite({ by: "danny", createdBy: "Danny Ruiz" });
+  await open(declined.code);
+  sandbox.dismissJoin();
+  eq("declining leaves the code unspent",
+     inv.invites.find(i => i.id === declined.id).usedBy, null);
+  eq("and puts you back in the app", sandbox.JOIN.code, "");
+
+  /* ---- 25. handing one out ---- */
   group("Handing out an invite");
-  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM" };
   sandbox.JOIN = { code: "", state: "", from: null, error: "" };
   sandbox.location = { pathname: "/" };
-  sandbox.loadStore("me");
   sandbox.openData();
   await settle();
   ok("the profile screen offers a way to invite somebody",
      viewHTML().indexOf("newInvite()") >= 0);
-  ok("and is honest about what an invite buys",
-     viewHTML().indexOf("every shared workout") >= 0);
+  ok("and is honest about what an invite does now",
+     viewHTML().indexOf("follows you and you follow them") >= 0);
   ok("an invite somebody took is listed under their name",
      viewHTML().indexOf("Joined") >= 0 && viewHTML().indexOf("Robin Miller") >= 0);
   ok("a spent invite cannot be cancelled",
@@ -1168,6 +1317,7 @@ function fakeServer() {
      viewHTML().indexOf('id="invitelink"') >= 0 && viewHTML().indexOf(link.url) >= 0);
   ok("with when it dies and that it works once",
      /Expires in \d+ hours?, and works once/.test(viewHTML()));
+  ok("and what taking it does", viewHTML().indexOf("follows you, and you follow them") >= 0);
   ok("a waiting invite can be cancelled", viewHTML().indexOf("Waiting") >= 0 &&
      viewHTML().indexOf("revokeInvite(") >= 0);
 
@@ -1182,7 +1332,124 @@ function fakeServer() {
   sandbox.SY.user = null;
   await open(link.code);
   ok("and the cancelled link is a dead end for whoever has it",
-     viewHTML().indexOf("cancelled") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
+     viewHTML().indexOf("cancelled") >= 0 && viewHTML().indexOf('id="loginpass"') < 0);
+
+  /* ---- 26. finding people, and following them ---- */
+  group("Finding people and following them");
+  const net = fakeServer();
+  sandbox.fetch = (p, o) => net.fetch(p, o);
+  sandbox.API = true;
+  sandbox.JOIN = { code: "", state: "", from: null, error: "" };
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM", username: "mark" };
+  net.me = "me";
+  net.users.push(
+    { id: "sam", username: "sam.o", name: "Sam Okonkwo", initials: "SO", password: "x" },
+    { id: "tess", username: "tessl", name: "Tess Lindqvist", initials: "TL", password: "x" });
+  sandbox.loadStore("me");
+  sandbox.FIND = { q: "", people: null };
+  sandbox.goHome();
+  sandbox.setHome("crew");
+  const findOut = () =>
+    sandbox.document.getElementById("findlist").innerHTML || viewHTML();
+  const type = async (q) => {
+    sandbox.document.getElementById("findlist").innerHTML = "";
+    field("findq").value = q;
+    sandbox.findPeople();
+    await settle();
+  };
+
+  ok("the crew tab has a way to find people", viewHTML().indexOf('id="findq"') >= 0);
+  ok("and a way to invite one", viewHTML().indexOf("newInvite()") >= 0);
+
+  await type("sam");
+  ok("searching lists who matches", findOut().indexOf("Sam Okonkwo") >= 0);
+  ok("by their username too", findOut().indexOf("@sam.o") >= 0);
+  ok("with a Follow button", findOut().indexOf("toggleFollow(") >= 0);
+  ok("and nobody who does not match", findOut().indexOf("Tess") < 0);
+
+  const writes = net.followWrites;
+  sandbox.toggleFollow("sam");
+  ok("tapping Follow shows immediately, before the round trip",
+     findOut().indexOf("Following") >= 0);
+  await settle();
+  eq("and reaches the server", net.followWrites, writes + 1);
+  ok("which is now following them", net.follows.has("me>sam"));
+  ok("following is instant — there is no request to approve",
+     findOut().indexOf("Requested") < 0 && findOut().indexOf("Approve") < 0);
+
+  sandbox.toggleFollow("sam");
+  await settle();
+  ok("tapping again unfollows", !net.follows.has("me>sam"));
+  ok("and the button goes back", findOut().indexOf(">Follow<") >= 0);
+
+  await type("mark");
+  ok("you are findable too", findOut().indexOf("Mark Miller") >= 0);
+  ok("but there is no following yourself",
+     findOut().indexOf("toggleFollow('me')") < 0 && findOut().indexOf("You") >= 0);
+
+  await type("zzzz");
+  ok("nobody matching says so, naming what you typed",
+     findOut().indexOf("Nobody matching") >= 0 && findOut().indexOf("zzzz") >= 0);
+  /* the header must NOT be rebuilt on a keystroke, or the box loses focus */
+  ok("typing does not redraw the search box", viewHTML().indexOf('value="zzzz"') < 0);
+  sandbox.render();
+  ok("but a background redraw keeps what you typed",
+     viewHTML().indexOf('value="zzzz"') >= 0);
+
+  /* the roster is who you follow now, not everybody with an account */
+  net.crew = [{ id: "me", name: "Mark Miller", initials: "MM", mine: true },
+              { id: "sam", name: "Sam Okonkwo", initials: "SO" }];
+  net.follow("me", "sam"); net.follow("tess", "me");
+  await sandbox.sync();
+
+  field("findq").value = "";
+  sandbox.findPeople();
+  await settle();
+  ok("clearing the box gives the crew back",
+     viewHTML().indexOf('class="roster"') >= 0 && viewHTML().indexOf("findlist") < 0);
+  ok("the roster is the people you follow", viewHTML().indexOf(">Sam<") >= 0);
+  ok("and not the ones you do not", viewHTML().indexOf(">Tess<") < 0);
+  ok("it counts both directions",
+     viewHTML().indexOf("1 following") >= 0 && viewHTML().indexOf("1 follower") >= 0);
+
+  /* ---- 27. passwords ---- */
+  group("Passwords");
+  sandbox.openData();
+  await settle();
+  ok("the profile screen can change your password",
+     viewHTML().indexOf("changePassword()") >= 0 && viewHTML().indexOf('id="pwnew"') >= 0);
+  ok("and says who you are, username and all",
+     viewHTML().indexOf("@mark") >= 0);
+  ok("with what following you buys somebody",
+     viewHTML().indexOf("you mark Shared") >= 0);
+
+  const pw = net.passwords;
+  field("pwold").value = "";
+  field("pwnew").value = "alsolongenough";
+  sandbox.changePassword();
+  ok("it will not send a blank current password",
+     field("pwmsg").textContent.indexOf("current password") >= 0);
+  field("pwold").value = "longenough1";
+  field("pwnew").value = "short";
+  sandbox.changePassword();
+  ok("nor a new one under eight characters",
+     field("pwmsg").textContent.indexOf("8 characters") >= 0);
+  eq("neither of which reached the server", net.passwords, pw);
+
+  field("pwnew").value = "alsolongenough";
+  sandbox.changePassword();
+  await settle();
+  eq("a good pair changes it", net.passwords, pw + 1);
+  eq("on the account you are signed in as", net.user("me").password, "alsolongenough");
+  ok("and says the other devices stay signed in",
+     field("pwmsg").textContent.indexOf("stay signed in") >= 0);
+
+  field("pwold").value = "notmypassword";
+  field("pwnew").value = "anotherlongone";
+  sandbox.changePassword();
+  await settle();
+  ok("the wrong current password is refused by the server",
+     field("pwmsg").textContent.indexOf("not your current password") >= 0);
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

@@ -7,11 +7,11 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL UNIQUE,   -- lowercased; what you type to sign in
+  name          TEXT NOT NULL UNIQUE,   -- the username: lowercase, a-z 0-9 . _
   display       TEXT NOT NULL,          -- how it is shown back to you
-  initials      TEXT NOT NULL,          -- for the crew disc in phase 2
-  pin_hash      TEXT NOT NULL,          -- PBKDF2-SHA256, hex
-  pin_salt      TEXT NOT NULL,          -- 16 random bytes, hex
+  initials      TEXT NOT NULL,          -- for the crew disc
+  pass_hash     TEXT NOT NULL,          -- PBKDF2-SHA256, hex
+  pass_salt     TEXT NOT NULL,          -- 16 random bytes, hex
   email         TEXT,                   -- the Google allowlist; NULL = PIN only
   google_sub    TEXT,                   -- Google's permanent id, bound on first
                                         -- sign-in. Matching is on this, never
@@ -106,3 +106,23 @@ CREATE TABLE IF NOT EXISTS invites (
   revoked    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS invites_by_created ON invites(created);
+
+-- ---------------------------------------------------------------------------
+-- The follow graph. Added 2026-08-29, when "the crew" stopped meaning "every
+-- account on this server" and started meaning "the people you follow".
+--
+-- Instant, not approved: tapping Follow is a write, not a request. Mark's
+-- call, Twitter's model. The consequence lives in the feed query -- a shared
+-- session is visible to its owner and to every follower, and to nobody else.
+--
+-- No row for following yourself. Your own workouts are in your own feed
+-- because the query says so, not because of a self-edge that every count
+-- would then have to subtract.
+CREATE TABLE IF NOT EXISTS follows (
+  follower TEXT NOT NULL,             -- who is doing the following
+  followee TEXT NOT NULL,             -- who they follow
+  created  INTEGER NOT NULL,
+  PRIMARY KEY (follower, followee)    -- makes a double tap idempotent
+);
+-- "who follows me" -- the count on the profile screen, and nothing else yet.
+CREATE INDEX IF NOT EXISTS follows_by_followee ON follows(followee);

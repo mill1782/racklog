@@ -12,6 +12,7 @@
 import APP_HTML from "../rack-log.html";
 import ICON192 from "./icon-192.png";
 import ICON512 from "./icon-512.png";
+import SPLASH from "./splash.jpg";
 
 const COOKIE = "rl";
 /* 48 hours, Mark's call. Long enough to survive a family text going unread
@@ -24,6 +25,15 @@ const SESSION_MS = 90 * 86400 * 1000;
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_BODY = 256 * 1024;
+
+/* Usernames are what you type to sign in and what search matches on, so they
+   are narrow on purpose: lowercase, and nothing that has to be escaped or
+   percent-encoded to sit in a URL or a LIKE pattern. */
+const USERNAME_RE = /^[a-z0-9][a-z0-9._]{2,19}$/;
+/* 8, where the PIN door wanted 6 digits. A password is only worth the change
+   from a PIN if it is allowed to be longer than one. */
+const MIN_PASS = 8;
+const MAX_PASS = 200;
 
 /* Google sign-in. The state nonce lives in its own short cookie scoped to
    /api/auth/ so it never rides along with anything else. */
@@ -45,10 +55,12 @@ const CLEAR_INVITE = `${INVITE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/a
  * and the failure mode is not "slow login", it is "login does not work".
  * 5,000 leaves roughly 3x headroom.
  *
- * The security cost is smaller than it looks: a 6-digit PIN is a 10^6 space,
- * so NO iteration count makes it safe against offline cracking once the
- * database leaks. What actually stops guessing is the 5-try lockout below.
- * Hashing is here so a leak does not hand over PINs to reuse elsewhere.
+ * This mattered more when the secret was a 6-digit PIN: 10^6 is a space no
+ * iteration count saves once the database leaks. Passwords (8+ characters,
+ * since 2026-08-29) are a real improvement here, and the 5-try lockout below
+ * is still what stops online guessing. Hashing is here so a leak does not hand
+ * over passwords to reuse elsewhere -- which now matters more, because people
+ * reuse passwords in a way nobody reuses a gym PIN.
  *
  * On Workers Paid (30s CPU) raise this to 100,000 — and re-run adduser.mjs for
  * every user, with the same constant changed there, or nobody can sign in. */
@@ -111,8 +123,8 @@ function unhex(s) {
 async function sha256(s) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s))));
 }
-async function derive(pin, saltHex) {
-  const key = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveBits"]);
+async function derive(secret, saltHex) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt: unhex(saltHex), iterations: PBKDF2_ITER, hash: "SHA-256" }, key, 256);
   return hex(new Uint8Array(bits));
@@ -127,8 +139,22 @@ function same(a, b) {
 
 function publicUser(u) {
   /* `id` is the opaque row id, not a secret; the page needs it to tell its own
-     feed items apart from the crew's and to key its likes. */
-  return { id: u.id, name: u.display, initials: u.initials };
+     feed items apart from the crew's and to key its likes. `username` is what
+     other people search for, which is why it is sent back to its owner: it is
+     the one thing about an account that has to be shareable out loud. */
+  return { id: u.id, name: u.display, initials: u.initials, username: u.name };
+}
+
+/* One place decides what a sign-up is allowed to look like, because the same
+   three fields arrive from the front door, the join door, and adduser.mjs. */
+function credentialError(username, password, display) {
+  if (!display) return "Enter the name you want on your workouts.";
+  if (display.length > 40) return "That display name is too long.";
+  if (!USERNAME_RE.test(username))
+    return "Usernames are 3 to 20 characters: letters, numbers, dots and underscores.";
+  if (password.length < MIN_PASS) return "Passwords need at least " + MIN_PASS + " characters.";
+  if (password.length > MAX_PASS) return "That password is too long.";
+  return null;
 }
 
 async function readJSON(req) {
@@ -168,36 +194,104 @@ async function mintCookie(env, u) {
 
 async function login(req, env) {
   const b = await readJSON(req);
-  const name = String((b && b.name) || "").trim().toLowerCase();
-  const pin = String((b && b.pin) || "");
-  if (!name || !/^\d{4,12}$/.test(pin)) return json({ error: "Enter your name and PIN." }, 400);
+  /* `name`/`pin` were the field names until 2026-08-29 and are still accepted,
+     because a phone with the old page cached would otherwise fail to sign in
+     with a message about a field it does not have. */
+  const username = String((b && (b.username !== undefined ? b.username : b.name)) || "")
+    .trim().toLowerCase();
+  const password = String((b && (b.password !== undefined ? b.password : b.pin)) || "");
+  if (!username || !password) return json({ error: "Enter your username and password." }, 400);
 
-  const u = await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(name).first();
+  const u = await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(username).first();
   const now = Date.now();
 
-  /* derive even when the name is unknown, so response time does not reveal
-     which family names exist */
+  /* derive even when the username is unknown, so response time does not reveal
+     which accounts exist -- open signup makes that a public question, and
+     "is this name taken" is answered honestly at signup anyway, but a timing
+     side channel on the LOGIN door would also leak which ones have passwords */
   if (!u) {
-    await derive(pin, "00000000000000000000000000000000");
-    return json({ error: "Wrong name or PIN." }, 401);
+    await derive(password, "00000000000000000000000000000000");
+    return json({ error: "Wrong username or password." }, 401);
   }
   if (u.locked_until > now) {
     return json({ error: "Too many tries. Try again in 15 minutes." }, 429);
   }
 
-  const h = await derive(pin, u.pin_salt);
-  if (!same(h, u.pin_hash)) {
+  const h = await derive(password, u.pass_salt);
+  if (!same(h, u.pass_hash)) {
     const fails = (u.fails || 0) + 1;
     const locked = fails >= MAX_FAILS;
     await env.DB.prepare("UPDATE users SET fails = ?, locked_until = ? WHERE id = ?")
       .bind(locked ? 0 : fails, locked ? now + LOCK_MS : 0, u.id).run();
-    return json({ error: locked ? "Too many tries. Locked for 15 minutes." : "Wrong name or PIN." },
+    return json({ error: locked ? "Too many tries. Locked for 15 minutes."
+                                : "Wrong username or password." },
       locked ? 429 : 401);
   }
 
   await env.DB.prepare("UPDATE users SET fails = 0, locked_until = 0 WHERE id = ?").bind(u.id).run();
 
   return json({ user: publicUser(u) }, 200, { "set-cookie": await mintCookie(env, u) });
+}
+
+/* Open signup, from 2026-08-29, Mark's call alongside the follow graph. Until
+   then an account existed only because somebody ran adduser.mjs or spent an
+   invite, and the users table WAS the allowlist.
+   What replaces it: nothing you log is visible to anybody until you mark a
+   session Shared, and a shared session only reaches people who follow you. An
+   account on its own buys an empty feed. */
+async function signup(req, env) {
+  const b = await readJSON(req);
+  const username = String((b && b.username) || "").trim().toLowerCase();
+  const password = String((b && b.password) || "");
+  const display = String((b && b.name) || "").trim().replace(/\s+/g, " ");
+  const code = String((b && b.code) || "");
+
+  const bad = credentialError(username, password, display);
+  if (bad) return json({ error: bad }, 400);
+
+  const taken = await env.DB.prepare("SELECT id FROM users WHERE name = ?").bind(username).first();
+  if (taken) return json({ error: "That username is taken." }, 409);
+
+  /* An invite is optional now: it is no longer the door, it is the handshake.
+     Spend it BEFORE making the account, so a dead code does not leave a user
+     row behind, and connect the two people once the account exists. */
+  let inv = null;
+  if (code) {
+    const r = await redeem(env, code);
+    if (r.err) return r.err;
+    inv = r.row;
+  }
+
+  const u = await makeUser(env, { display, name: username, pass: password });
+  if (inv) {
+    if (!await claim(env, inv.id, u.id)) {
+      await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(u.id).run();
+      return json({ error: "That invite has already been used." }, 410);
+    }
+    await connect(env, u.id, inv.created_by);
+  }
+  return json({ user: publicUser(u), followed: inv ? 1 : 0 }, 200,
+    { "set-cookie": await mintCookie(env, u) });
+}
+
+/* Changing a password proves the old one first. Every other session stays
+   alive on purpose: the family shares devices, and signing everybody's phone
+   out because somebody picked a longer password would be a surprise. */
+async function changePassword(req, env, user) {
+  const b = await readJSON(req);
+  const current = String((b && b.current) || "");
+  const next = String((b && b.next) || "");
+  if (next.length < MIN_PASS) return json({ error: "Passwords need at least " + MIN_PASS + " characters." }, 400);
+  if (next.length > MAX_PASS) return json({ error: "That password is too long." }, 400);
+
+  const u = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first();
+  if (!same(await derive(current, u.pass_salt), u.pass_hash))
+    return json({ error: "That is not your current password." }, 401);
+
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  await env.DB.prepare("UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?")
+    .bind(await derive(next, salt), salt, u.id).run();
+  return json({ ok: true });
 }
 
 /* ---------- google sign-in ---------- */
@@ -343,22 +437,21 @@ async function googleCallback(req, env, url) {
   if (!u) {
     u = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
     if (!u) {
-      /* No account matches. This is the ONLY way a Google sign-in creates one,
-         and it needs an invite that is still good -- otherwise the app is open
-         to everyone on earth with a Google account, which is everyone. */
-      const im = (req.headers.get("Cookie") || "")
-        .match(/(?:^|;\s*)rlinvite=([a-f0-9]{32})(?:;|$)/);
-      if (!im) return oauthFail("That Google account is not on the list for this app.");
-      const r = await redeem(env, im[1]);
-      if (r.err) {
-        const j = await r.err.json();
-        return oauthFail(j.error || "That invite is no longer valid.");
-      }
+      /* No account matches, so this makes one. Until 2026-08-29 that needed a
+         valid invite, because the users table was the allowlist; signup is
+         open now, and a new account starts with an empty feed and nobody
+         following it, which is what makes that safe.
+         An invite cookie is no longer a requirement, only a handshake: if one
+         rode along and is still good, it connects the two people. A dead one
+         is ignored rather than refused -- the account is fine either way, and
+         failing a sign-in over a stale link would be the worse answer. */
       const display = String(c.name || email.split("@")[0]).trim().slice(0, 40) || "Member";
       u = await makeUser(env, { display, name: await freeName(env, display), email, sub });
-      if (!await claim(env, r.row.id, u.id)) {
-        await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(u.id).run();
-        return oauthFail("That invite has already been used.");
+      const im = (req.headers.get("Cookie") || "")
+        .match(/(?:^|;\s*)rlinvite=([a-f0-9]{32})(?:;|$)/);
+      if (im) {
+        const r = await redeem(env, im[1]);
+        if (!r.err && await claim(env, r.row.id, u.id)) await connect(env, u.id, r.row.created_by);
       }
       return homeRedirect([await mintCookie(env, u), CLEAR_STATE, CLEAR_INVITE]);
     }
@@ -373,15 +466,18 @@ async function googleCallback(req, env, url) {
 }
 
 /* ---------- invites ----------
-   An invite is a bearer credential that buys exactly one account. It is the
-   only way to self-register, and everything below exists to keep "exactly
-   one" true: the code is single-use, expiring, revocable, and redeemed
-   through a single funnel (`redeem`) that both doors call.
+   An invite used to be the only way to self-register. Since signup opened on
+   2026-08-29 it is a handshake instead: a link that says "follow me back",
+   good for one account or one already-signed-in person, and it connects
+   whoever takes it to whoever sent it in both directions.
+   Everything below still exists to keep "exactly one" true: the code is
+   single-use, expiring, revocable, and redeemed through a single funnel
+   (`redeem`) that every door calls.
 
-   Note what an invite is NOT: it is not a per-person permission. This server
-   is one household and the crew is the users table, so admitting somebody
-   admits them to every shared workout on it. There is no demoting them
-   afterwards short of deleting the row. */
+   What an invite buys is now bounded, which it was not before: it makes you
+   and one other person follow each other. Unfollowing undoes it. That is the
+   whole of it -- it is not an account permission any more, because an account
+   needs no permission. */
 
 function inviteLink(url, code) { return url.origin + "/join/" + code; }
 
@@ -396,12 +492,16 @@ function publicInvite(r, now) {
            usedBy: r.used_by || null };
 }
 
-async function invitesList(env, url) {
+/* Your invites, not everybody's. This was a list of every code on the server
+   back when every account was one Mark had made by hand; open signup turned it
+   into a stranger's view of who you invited and who took it. */
+async function invitesList(env, user, url) {
   const now = Date.now();
   const rs = await env.DB.prepare(
     "SELECT i.*, u.display AS used_display FROM invites i " +
-    "LEFT JOIN users u ON u.id = i.used_by ORDER BY i.created DESC LIMIT 50"
-  ).all();
+    "LEFT JOIN users u ON u.id = i.used_by WHERE i.created_by = ? " +
+    "ORDER BY i.created DESC LIMIT 50"
+  ).bind(user.id).all();
   const invites = (rs.results || []).map((r) => {
     const v = publicInvite(r, now);
     v.usedBy = r.used_display || null;
@@ -418,8 +518,9 @@ async function inviteCreate(env, user, url) {
   ).bind(now - INVITE_MS).run();
 
   const open = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM invites WHERE used_by IS NULL AND revoked = 0 AND expires > ?"
-  ).bind(now).first();
+    "SELECT COUNT(*) AS n FROM invites " +
+    "WHERE created_by = ? AND used_by IS NULL AND revoked = 0 AND expires > ?"
+  ).bind(user.id, now).first();
   if (open && open.n >= MAX_PENDING)
     return json({ error: "There are already " + MAX_PENDING + " invites waiting. " +
                          "Revoke one before making another." }, 429);
@@ -436,11 +537,11 @@ async function inviteCreate(env, user, url) {
   return json({ id, code, url: inviteLink(url, code), expires, state: "pending" });
 }
 
-async function inviteRevoke(env, id) {
+async function inviteRevoke(env, user, id) {
   if (!/^[a-f0-9]{12}$/.test(id)) return json({ error: "Bad invite." }, 400);
   const r = await env.DB.prepare(
-    "UPDATE invites SET revoked = 1 WHERE id = ? AND used_by IS NULL"
-  ).bind(id).run();
+    "UPDATE invites SET revoked = 1 WHERE id = ? AND created_by = ? AND used_by IS NULL"
+  ).bind(id, user.id).run();
   const changed = r && r.meta ? r.meta.changes : 0;
   if (!changed) return json({ error: "That invite is already used or gone." }, 404);
   return json({ ok: true, id });
@@ -490,10 +591,14 @@ function initialsOf(display) {
   return display.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
-/* `users.name` is UNIQUE and it is what you type at the PIN door, so a second
-   Nate cannot simply be Nate. */
+/* `users.name` is UNIQUE and it is what you type at the sign-in door, so a
+   second Nate cannot simply be nate. Only Google gets here now -- everybody
+   else picks their own username and is told when it is taken -- so the base
+   has to be squeezed into USERNAME_RE first, from whatever Google reports. */
 async function freeName(env, base) {
-  const want = base.toLowerCase();
+  let want = base.toLowerCase().replace(/[^a-z0-9._]/g, "");
+  if (want.length < 3) want = "member" + want;
+  want = want.slice(0, 16);
   for (let i = 0; i < 50; i++) {
     const n = i ? want + (i + 1) : want;
     const hit = await env.DB.prepare("SELECT id FROM users WHERE name = ?").bind(n).first();
@@ -502,46 +607,94 @@ async function freeName(env, base) {
   return want + "-" + hex(crypto.getRandomValues(new Uint8Array(3)));
 }
 
-async function makeUser(env, { display, name, pin, email, sub }) {
+async function makeUser(env, { display, name, pass, email, sub }) {
   const id = hex(crypto.getRandomValues(new Uint8Array(8)));
   const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
-  /* Every account needs a pin_hash because the column is NOT NULL. Someone who
-     joined with Google gets a random one nobody knows, which is not a way in:
-     it is 32 bytes of entropy and the PIN door only accepts 4-12 digits. */
-  const secret = pin || hex(crypto.getRandomValues(new Uint8Array(32)));
+  /* Every account needs a pass_hash because the column is NOT NULL. Someone
+     who signed up with Google gets a random one nobody knows, which is not a
+     way in: it is 32 bytes of entropy, and nothing derives to it. */
+  const secret = pass || hex(crypto.getRandomValues(new Uint8Array(32)));
   await env.DB.prepare(
-    "INSERT INTO users (id, name, display, initials, pin_hash, pin_salt, email, google_sub, created) " +
+    "INSERT INTO users (id, name, display, initials, pass_hash, pass_salt, email, google_sub, created) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).bind(id, name, display, initialsOf(display), await derive(secret, salt), salt,
          email || null, sub || null, Date.now()).run();
   return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first();
 }
 
-/* Joining with a name and a PIN. The Google half of this lives in
-   googleCallback, because it has to survive the round trip to Google. */
-async function join(req, env, url) {
-  const b = await readJSON(req);
-  const code = String((b && b.code) || "");
-  const display = String((b && b.name) || "").trim().replace(/\s+/g, " ");
-  const pin = String((b && b.pin) || "");
+/* Both directions, in one statement pair. An invite means "join my crew",
+   which is a mutual thing -- following one way and being ignored back is not
+   what the person tapping the link is agreeing to. */
+async function connect(env, a, b) {
+  if (!a || !b || a === b) return;
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO follows (follower, followee, created) VALUES (?, ?, ?)")
+      .bind(a, b, now),
+    env.DB.prepare("INSERT OR IGNORE INTO follows (follower, followee, created) VALUES (?, ?, ?)")
+      .bind(b, a, now)
+  ]);
+}
 
-  if (!display || display.length > 40)
-    return json({ error: "Enter the name you want on your workouts." }, 400);
-  /* six, not four: this URL is public, and four digits is 10,000 guesses */
-  if (!/^\d{6,12}$/.test(pin))
-    return json({ error: "Pick a PIN of 6 to 12 digits." }, 400);
-
+/* Somebody who already has an account, opening an invite link. There is no
+   account to make, so this is only the handshake -- and it still spends the
+   code, because a link that keeps working after it has been used is not the
+   thing that was handed out. */
+async function inviteAccept(env, user, code) {
   const r = await redeem(env, code);
   if (r.err) return r.err;
-
-  const name = await freeName(env, display);
-  const u = await makeUser(env, { display, name, pin });
-  if (!await claim(env, r.row.id, u.id)) {
-    /* somebody else got there in the millisecond between redeem and claim */
-    await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(u.id).run();
+  if (r.row.created_by === user.id)
+    return json({ error: "That is your own invite link." }, 400);
+  if (!await claim(env, r.row.id, user.id))
     return json({ error: "That invite has already been used." }, 410);
-  }
-  return json({ user: publicUser(u), name }, 200, { "set-cookie": await mintCookie(env, u) });
+  await connect(env, user.id, r.row.created_by);
+  return json({ ok: true, followed: r.row.created_by });
+}
+
+/* ---------- the follow graph ---------- */
+
+/* Finding somebody. Matches the username and the display name, because people
+   know each other by both, and says whether you already follow them so the
+   button can read Following without a second round trip. */
+async function userSearch(env, user, url) {
+  /* LIKE has its own wildcards; a search for "100%" must not match everyone */
+  const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 40)
+    .replace(/[%_\\]/g, (c) => "\\" + c);
+  const like = "%" + q + "%";
+  const rs = await env.DB.prepare(
+    "SELECT u.id, u.name, u.display, u.initials, " +
+    "  (SELECT 1 FROM follows f WHERE f.follower = ? AND f.followee = u.id) AS following " +
+    "FROM users u WHERE u.name LIKE ? ESCAPE '\\' OR lower(u.display) LIKE ? ESCAPE '\\' " +
+    "ORDER BY (u.name = ?) DESC, u.display LIMIT 20"
+  ).bind(user.id, like, like, q).all();
+
+  return json({ people: (rs.results || []).map((r) => ({
+    id: r.id, username: r.name, name: r.display, initials: r.initials,
+    following: !!r.following, mine: r.id === user.id
+  })) });
+}
+
+/* Following is instant -- no request, no approval. `on:false` is the same
+   route, because unfollowing is the same tap on the same button. */
+async function followWrite(req, env, user) {
+  const b = await readJSON(req);
+  const id = String((b && b.id) || "");
+  const on = !!(b && b.on);
+  if (!id || id.length > 64) return json({ error: "Bad id." }, 400);
+  if (id === user.id) return json({ error: "You already see your own workouts." }, 400);
+
+  const them = await env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
+  if (!them) return json({ error: "No such person." }, 404);
+
+  if (on)
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO follows (follower, followee, created) VALUES (?, ?, ?)"
+    ).bind(user.id, id, Date.now()).run();
+  else
+    await env.DB.prepare("DELETE FROM follows WHERE follower = ? AND followee = ?")
+      .bind(user.id, id).run();
+
+  return json({ id, following: on });
 }
 
 /* ---------- sync ---------- */
@@ -586,16 +739,25 @@ async function push(req, env, user, id) {
 /* tombstone, never a real delete — see schema.sql */
 /* ---------- the crew feed ----------
    The first query in the app that is NOT scoped to a single user_id — a feed
-   that cannot cross users is not a feed. `shared` is the only thing keeping it
-   honest, and it is opt-in per session, so nothing lands here that its owner
-   did not deliberately post. */
+   that cannot cross users is not a feed. Two things keep it honest, and both
+   are needed: `shared` is opt-in per session, so nothing lands here that its
+   owner did not deliberately post, and since 2026-08-29 the rows are limited
+   to people you FOLLOW. Before that it was every shared session on the server,
+   which was defensible only while the server was one household.
+
+   `SELECT followee FROM follows WHERE follower = ?` appears three times below
+   rather than once in a temp table: D1 is SQLite and the follow table is tiny,
+   and one subquery per statement is cheaper to read than a join that has to be
+   correct in three places at once. */
+const VISIBLE = "(s.user_id = ? OR s.user_id IN (SELECT followee FROM follows WHERE follower = ?))";
+
 async function feed(env, user) {
   const rs = await env.DB.prepare(
     "SELECT s.user_id, s.id, s.date, s.split, s.ex, s.from_json, u.display, u.initials " +
     "FROM sessions s JOIN users u ON u.id = s.user_id " +
-    "WHERE s.shared = 1 AND s.deleted = 0 " +
+    "WHERE s.shared = 1 AND s.deleted = 0 AND " + VISIBLE + " " +
     "ORDER BY s.date DESC, s.updated DESC LIMIT 200"
-  ).all();
+  ).bind(user.id, user.id).all();
   const items = (rs.results || []).map((r) => ({
     /* Composite id, and it has to be. Session ids are client-generated, so two
        people can both hold an "s1"; unqualified they would collide, and likes,
@@ -617,8 +779,9 @@ async function feed(env, user) {
   const sc = await env.DB.prepare(
     "SELECT c.item_id, c.user_id, c.kind, c.body FROM social c " +
     "JOIN sessions s ON s.user_id || ':' || s.id = c.item_id " +
-    "WHERE s.shared = 1 AND s.deleted = 0 ORDER BY c.created LIMIT 2000"
-  ).all();
+    "WHERE s.shared = 1 AND s.deleted = 0 AND " + VISIBLE + " " +
+    "ORDER BY c.created LIMIT 2000"
+  ).bind(user.id, user.id).all();
 
   const social = {}, need = new Set();
   for (const i of items) need.add(i.who);
@@ -629,28 +792,41 @@ async function feed(env, user) {
     need.add(r.user_id);
   }
 
-  /* The crew is not a group you join -- it is simply every account on this
-     server, because `worker/adduser.mjs` is the only way one is made and it
-     is run by hand. So the roster is the whole users table, and it is sent
-     whole: somebody who has never shared a workout is still on the crew, and
-     the page has to be able to say so rather than showing an empty screen
-     with no explanation of who is missing. */
+  /* "Your crew" is now the people you follow, in the order you followed them,
+     with you first. It is still sent whole and still drawn above the feed,
+     because it answers the question an empty feed cannot: somebody you follow
+     who has never shared a workout is on the roster, and the page can say so
+     rather than showing an empty screen with nothing to explain it. */
   const cr = await env.DB.prepare(
-    "SELECT id, display, initials FROM users ORDER BY created LIMIT 100"
-  ).all();
-  const crew = (cr.results || []).map((r) => ({
-    id: r.id, name: r.display, initials: r.initials, mine: r.id === user.id
-  }));
+    "SELECT u.id, u.display, u.initials, u.name FROM follows f " +
+    "JOIN users u ON u.id = f.followee WHERE f.follower = ? ORDER BY f.created LIMIT 200"
+  ).bind(user.id).all();
+  const crew = [{ id: user.id, name: user.display, initials: user.initials,
+                  username: user.name, mine: true }].concat(
+    (cr.results || []).map((r) => ({
+      id: r.id, name: r.display, initials: r.initials, username: r.name, mine: false
+    })));
 
-  /* Names for everyone the page will have to draw a disc for. The feed rows
-     only name people who SHARED; someone who has only ever commented would
-     otherwise render as a raw row id. The roster covers all of them, so this
-     is now a straight copy rather than a second query. */
+  const fc = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE followee = ?")
+    .bind(user.id).first();
+  const counts = { following: crew.length - 1, followers: (fc && fc.n) || 0 };
+
+  /* Names for everyone the page will have to draw a disc for. The roster used
+     to cover all of them, and no longer does: somebody you do NOT follow can
+     comment on a workout by somebody you do, and would otherwise render as a
+     raw row id. One query for whoever is left over. */
   const people = {};
   for (const c of crew) people[c.id] = { name: c.name, initials: c.initials };
+  const rest = [...need].filter((id) => !people[id]).slice(0, 100);
+  if (rest.length) {
+    const qs = rest.map(() => "?").join(",");
+    const ps = await env.DB.prepare(
+      "SELECT id, display, initials FROM users WHERE id IN (" + qs + ")").bind(...rest).all();
+    for (const r of (ps.results || [])) people[r.id] = { name: r.display, initials: r.initials };
+  }
   for (const id of need) if (!people[id]) people[id] = { name: id, initials: "?" };
 
-  return json({ now: Date.now(), items, social, people, crew });
+  return json({ now: Date.now(), items, social, people, crew, counts });
 }
 
 /* One like or one comment. The only write in the app that lands on somebody
@@ -665,10 +841,14 @@ async function socialWrite(req, env, user) {
   const cut = item.indexOf(":");
   if (cut < 1 || item.length > 130) return json({ error: "Bad item." }, 400);
 
+  /* The same visibility rule the feed uses, and it has to be re-checked here:
+     the feed is what the page can SEE, this is what it can WRITE, and a
+     crafted request never went through the feed at all. */
   const target = await env.DB.prepare(
-    "SELECT 1 FROM sessions WHERE user_id = ? AND id = ? AND shared = 1 AND deleted = 0"
-  ).bind(item.slice(0, cut), item.slice(cut + 1)).first();
-  if (!target) return json({ error: "That workout isn’t shared." }, 404);
+    "SELECT 1 FROM sessions s WHERE s.user_id = ? AND s.id = ? " +
+    "AND s.shared = 1 AND s.deleted = 0 AND " + VISIBLE
+  ).bind(item.slice(0, cut), item.slice(cut + 1), user.id, user.id).first();
+  if (!target) return json({ error: "That workout isn’t shared with you." }, 404);
 
   const now = Date.now();
 
@@ -719,10 +899,10 @@ async function api(req, env, url) {
   }
 
   if (path === "login" && method === "POST") return login(req, env);
-  if (path === "join" && method === "POST") return join(req, env, url);
+  if (path === "signup" && method === "POST") return signup(req, env);
   /* public on purpose: the join screen has to be able to say "expired" before
-     asking a stranger to choose a PIN */
-  if (path.startsWith("invite/") && method === "GET")
+     asking a stranger to pick a username */
+  if (path.startsWith("invite/") && !path.endsWith("/accept") && method === "GET")
     return inviteCheck(env, decodeURIComponent(path.slice(7)));
   if (path === "auth/google/start" && method === "GET") return googleStart(req, env, url);
   if (path === "auth/google/callback" && method === "GET") return googleCallback(req, env, url);
@@ -743,10 +923,18 @@ async function api(req, env, url) {
 
   if (!user) return json({ error: "Signed out." }, 401);
 
-  if (path === "invites" && method === "GET") return invitesList(env, url);
+  if (path === "password" && method === "POST") return changePassword(req, env, user);
+  if (path === "users" && method === "GET") return userSearch(env, user, url);
+  if (path === "follow" && method === "POST") return followWrite(req, env, user);
+  /* signed in and holding somebody's link: no account to make, just the
+     handshake -- and the code is still spent */
+  if (path.startsWith("invite/") && path.endsWith("/accept") && method === "POST")
+    return inviteAccept(env, user, decodeURIComponent(path.slice(7, -7)));
+
+  if (path === "invites" && method === "GET") return invitesList(env, user, url);
   if (path === "invites" && method === "POST") return inviteCreate(env, user, url);
   if (path.startsWith("invites/") && path.endsWith("/revoke") && method === "POST")
-    return inviteRevoke(env, path.slice(8, -7));
+    return inviteRevoke(env, user, path.slice(8, -7));
 
   if (path === "sessions" && method === "GET") return pull(env, user, url);
   if (path === "feed" && method === "GET") return feed(env, user);
@@ -785,6 +973,7 @@ export default {
       return asset(MANIFEST, "application/manifest+json", "public, max-age=3600");
     if (p === "/icon-192.png") return asset(ICON192, "image/png", "public, max-age=604800");
     if (p === "/icon-512.png") return asset(ICON512, "image/png", "public, max-age=604800");
+    if (p === "/splash.jpg") return asset(SPLASH, "image/jpeg", "public, max-age=604800");
 
     /* no-cache, not no-store: the browser may keep it, but must revalidate, so
        a deploy reaches everyone's home-screen app on the next launch */
