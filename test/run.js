@@ -553,6 +553,29 @@ function fakeServer() {
      sandbox.authSection().indexOf("Sign in") >= 0);
   ok("the unsent edit is still queued", sandbox.dirtyOps().length > 0);
 
+  group("Google sign-in");
+  /* signed out, on a server that has Google credentials */
+  sandbox.SY.user = null;
+  sandbox.API = true;
+  sandbox.SY.google = true;
+  ok("the button appears when the server offers Google",
+     sandbox.authSection().indexOf("/api/auth/google/start") >= 0);
+  ok("and it is a link, not a fetch button \u2014 OAuth is a top-level navigation",
+     /<a class="btn link" href="\/api\/auth\/google\/start">/.test(sandbox.authSection()));
+  ok("the PIN form is still there alongside it",
+     sandbox.authSection().indexOf('id="loginpin"') >= 0);
+
+  /* a server without credentials must not advertise it */
+  sandbox.SY.google = false;
+  ok("no button when the server has no Google credentials",
+     sandbox.authSection().indexOf("google") < 0);
+
+  /* and the standalone copy never shows it, whatever SY says */
+  sandbox.SY.google = true;
+  sandbox.API = false;
+  ok("never offered when there is no server at all",
+     sandbox.authSection().indexOf("google") < 0);
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();

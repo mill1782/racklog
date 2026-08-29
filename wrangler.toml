@@ -10,6 +10,14 @@ rules = [
   { type = "Data", globs = ["**/*.png"], fallthrough = true }
 ]
 
+# Google sign-in. The client id is public and belongs in the repo; the secret
+# does NOT — set it once with:
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+# and put it in .dev.vars (gitignored) for `wrangler dev`. Leave the id empty
+# and the worker never offers Google at all; PIN login is unaffected.
+[vars]
+GOOGLE_CLIENT_ID = "255233140114-q3qn3kfurjvrjjsosl79p4pgmgt7neku.apps.googleusercontent.com"
+
 [observability]
 enabled = true
 

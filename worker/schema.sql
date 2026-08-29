@@ -12,10 +12,19 @@ CREATE TABLE IF NOT EXISTS users (
   initials      TEXT NOT NULL,          -- for the crew disc in phase 2
   pin_hash      TEXT NOT NULL,          -- PBKDF2-SHA256, hex
   pin_salt      TEXT NOT NULL,          -- 16 random bytes, hex
+  email         TEXT,                   -- the Google allowlist; NULL = PIN only
+  google_sub    TEXT,                   -- Google's permanent id, bound on first
+                                        -- sign-in. Matching is on this, never
+                                        -- on email: an address can change hands.
   fails         INTEGER NOT NULL DEFAULT 0,
   locked_until  INTEGER NOT NULL DEFAULT 0,
   created       INTEGER NOT NULL
 );
+
+-- UNIQUE, but SQLite allows any number of NULLs in a unique index, so several
+-- PIN-only accounts coexist fine.
+CREATE UNIQUE INDEX IF NOT EXISTS users_by_email ON users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS users_by_google ON users(google_sub);
 
 -- One row per workout. `ex` is the exercise array as JSON, stored verbatim:
 -- the kind model (lift / machine / tread) goes over the wire unchanged, so

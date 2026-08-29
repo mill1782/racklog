@@ -19,6 +19,11 @@ const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_BODY = 256 * 1024;
 
+/* Google sign-in. The state nonce lives in its own short cookie scoped to
+   /api/auth/ so it never rides along with anything else. */
+const OAUTH_STATE = "rlstate";
+const OAUTH_STATE_S = 600;
+
 /* Why this number is low, deliberately.
  *
  * Workers meter CPU per request and the free plan allows ~10ms. Measured cost
@@ -138,6 +143,18 @@ async function currentUser(req, env) {
   return row;
 }
 
+/* Mint a session and the cookie carrying it. Both doors end here: whatever
+   proved who you are, everything downstream only ever sees this cookie. */
+async function mintCookie(env, u) {
+  const now = Date.now();
+  const raw = hex(crypto.getRandomValues(new Uint8Array(32)));
+  await env.DB.prepare("INSERT INTO tokens (token, user_id, expires) VALUES (?, ?, ?)")
+    .bind(await sha256(raw), u.id, now + SESSION_MS).run();
+  /* opportunistic cleanup; tokens are tiny but they should not pile up forever */
+  await env.DB.prepare("DELETE FROM tokens WHERE user_id = ? AND expires < ?").bind(u.id, now).run();
+  return `${COOKIE}=${raw}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_MS / 1000}`;
+}
+
 async function login(req, env) {
   const b = await readJSON(req);
   const name = String((b && b.name) || "").trim().toLowerCase();
@@ -169,15 +186,132 @@ async function login(req, env) {
 
   await env.DB.prepare("UPDATE users SET fails = 0, locked_until = 0 WHERE id = ?").bind(u.id).run();
 
-  const raw = hex(crypto.getRandomValues(new Uint8Array(32)));
-  const expires = now + SESSION_MS;
-  await env.DB.prepare("INSERT INTO tokens (token, user_id, expires) VALUES (?, ?, ?)")
-    .bind(await sha256(raw), u.id, expires).run();
-  /* opportunistic cleanup; tokens are tiny but they should not pile up forever */
-  await env.DB.prepare("DELETE FROM tokens WHERE user_id = ? AND expires < ?").bind(u.id, now).run();
+  return json({ user: publicUser(u) }, 200, { "set-cookie": await mintCookie(env, u) });
+}
 
-  return json({ user: publicUser(u) }, 200, {
-    "set-cookie": `${COOKIE}=${raw}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_MS / 1000}`
+/* ---------- google sign-in ---------- */
+
+/* Everything below degrades to "not configured" when the two vars are absent,
+   so a checkout without Google credentials still deploys and PIN login still
+   works. That is the whole reason this is a second door and not a replacement. */
+function googleOn(env) {
+  return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}
+function redirectURI(url) {
+  return url.origin + "/api/auth/google/callback";
+}
+
+/* A failed sign-in arrives as a top-level navigation, so it needs a page, not
+   JSON. Deliberately plain: it is a setup-time surface, not a product one. */
+function oauthFail(text) {
+  const body = '<!doctype html><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Rack Log</title>' +
+    '<div style="font:16px system-ui;max-width:32em;margin:18vh auto;padding:0 24px;text-align:center">' +
+    "<p>" + text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]) + "</p>" +
+    '<p><a href="/">Back to Rack Log</a></p></div>';
+  return new Response(body, {
+    status: 400,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
+  });
+}
+
+function b64urlJSON(seg) {
+  const t = seg.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = t + "===".slice((t.length + 3) % 4);
+  const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function googleStart(req, env, url) {
+  if (!googleOn(env)) return oauthFail("Google sign-in is not set up on this server.");
+  const state = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const q = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: redirectURI(url),
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    /* the family shares devices; without this Google silently reuses whoever
+       signed in last and there is no way to switch */
+    prompt: "select_account"
+  });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: "https://accounts.google.com/o/oauth2/v2/auth?" + q,
+      /* SameSite=Lax, NOT Strict. Strict withholds the cookie on the top-level
+         redirect back from Google, so every sign-in would fail the state check
+         with nothing in the logs to explain it. Lax sends it on that
+         navigation, which is exactly and only what is needed. */
+      "set-cookie": `${OAUTH_STATE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=${OAUTH_STATE_S}`,
+      "cache-control": "no-store"
+    }
+  });
+}
+
+async function googleCallback(req, env, url) {
+  if (!googleOn(env)) return oauthFail("Google sign-in is not set up on this server.");
+  if (url.searchParams.get("error")) return oauthFail("That sign-in was cancelled.");
+
+  const code = url.searchParams.get("code") || "";
+  const state = url.searchParams.get("state") || "";
+  const m = (req.headers.get("Cookie") || "").match(/(?:^|;\s*)rlstate=([A-Fa-f0-9]{32})(?:;|$)/);
+  if (!code || !state || !m || !same(m[1], state))
+    return oauthFail("That sign-in expired or was tampered with. Try again.");
+
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectURI(url),
+      grant_type: "authorization_code"
+    })
+  });
+  if (!r.ok) {
+    console.error("google token exchange", r.status, await r.text());
+    return oauthFail("Google would not confirm that sign-in.");
+  }
+  const tok = await r.json();
+
+  /* The ID token arrived straight from Google over TLS, in exchange for a
+     secret only this worker holds, so its signature does not need verifying —
+     Google's OpenID docs say so for exactly this server-side flow, and it
+     saves fetching and caching JWKS to do RS256 in a Worker.
+     Do NOT copy this shortcut anywhere a token arrives from a browser. */
+  const parts = String(tok.id_token || "").split(".");
+  let c = null;
+  if (parts.length === 3) { try { c = b64urlJSON(parts[1]); } catch (e) { c = null; } }
+  if (!c) return oauthFail("Google sent something this app could not read.");
+  if (c.aud !== env.GOOGLE_CLIENT_ID) return oauthFail("That sign-in was issued for a different app.");
+
+  const sub = String(c.sub || "");
+  const email = String(c.email || "").toLowerCase();
+  if (!sub || !email || c.email_verified === false)
+    return oauthFail("That Google account has no verified email address.");
+
+  /* Match on `sub`, never on email: an address can be renamed or change hands,
+     a Google `sub` never does. Email is only the bootstrap, because there is
+     no way to know someone's sub before their first sign-in. */
+  let u = await env.DB.prepare("SELECT * FROM users WHERE google_sub = ?").bind(sub).first();
+  if (!u) {
+    u = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
+    /* the allowlist IS the account table. Anyone on earth has a Google account,
+       so without this the app is open to the internet. */
+    if (!u) return oauthFail("That Google account is not on the list for this app.");
+    await env.DB.prepare("UPDATE users SET google_sub = ? WHERE id = ?").bind(sub, u.id).run();
+  }
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: "/",
+      "set-cookie": await mintCookie(env, u),
+      "cache-control": "no-store"
+    }
   });
 }
 
@@ -244,10 +378,15 @@ async function api(req, env, url) {
   }
 
   if (path === "login" && method === "POST") return login(req, env);
+  if (path === "auth/google/start" && method === "GET") return googleStart(req, env, url);
+  if (path === "auth/google/callback" && method === "GET") return googleCallback(req, env, url);
 
   const user = await currentUser(req, env);
 
-  if (path === "me" && method === "GET") return json({ user: user ? publicUser(user) : null });
+  /* `google` tells the page whether to offer the button at all, so a server
+     without credentials simply never shows it */
+  if (path === "me" && method === "GET")
+    return json({ user: user ? publicUser(user) : null, google: googleOn(env) });
 
   if (path === "logout" && method === "POST") {
     if (user) await env.DB.prepare("DELETE FROM tokens WHERE token = ?").bind(user.tok).run();
