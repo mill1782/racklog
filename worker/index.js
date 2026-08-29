@@ -23,6 +23,8 @@ const MAX_BODY = 256 * 1024;
    /api/auth/ so it never rides along with anything else. */
 const OAUTH_STATE = "rlstate";
 const OAUTH_STATE_S = 600;
+/* the nonce is single-use: the callback burns it whichever way it ends */
+const CLEAR_STATE = `${OAUTH_STATE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=0`;
 
 /* Why this number is low, deliberately.
  *
@@ -218,6 +220,14 @@ function oauthFail(text) {
   });
 }
 
+/* 302 home, carrying whatever cookies the caller wants set. A plain object
+   cannot hold two set-cookie headers, hence the Headers and the append. */
+function homeRedirect(cookies) {
+  const h = new Headers({ location: "/", "cache-control": "no-store" });
+  for (const c of cookies) h.append("set-cookie", c);
+  return new Response(null, { status: 302, headers: h });
+}
+
 function b64urlJSON(seg) {
   const t = seg.replace(/-/g, "+").replace(/_/g, "/");
   const padded = t + "===".slice((t.length + 3) % 4);
@@ -256,11 +266,25 @@ async function googleCallback(req, env, url) {
   if (!googleOn(env)) return oauthFail("Google sign-in is not set up on this server.");
   if (url.searchParams.get("error")) return oauthFail("That sign-in was cancelled.");
 
+  /* A REPLAY of this URL always fails, and that is not a malfunction: both the
+     authorization code and the state nonce are single-use, so a refresh, a
+     back-navigation, or a browser prefetching the redirect target hits a
+     callback whose code Google has already spent (`invalid_grant`). The first
+     hit had already minted the cookie.
+     Telling somebody who is demonstrably signed in -- their session cookie is
+     on the very request -- that Google would not confirm them is the worst
+     available answer, and it is what shipped on 2026-08-29. So every failure
+     a replay can reach checks for a live session first and quietly goes home.
+     Only these two: a cancelled sign-in and an account that is not on the
+     list are real answers that must still be shown. */
+  const replay = async (text) =>
+    (await currentUser(req, env)) ? homeRedirect([CLEAR_STATE]) : oauthFail(text);
+
   const code = url.searchParams.get("code") || "";
   const state = url.searchParams.get("state") || "";
   const m = (req.headers.get("Cookie") || "").match(/(?:^|;\s*)rlstate=([A-Fa-f0-9]{32})(?:;|$)/);
   if (!code || !state || !m || !same(m[1], state))
-    return oauthFail("That sign-in expired or was tampered with. Try again.");
+    return replay("That sign-in expired or was tampered with. Try again.");
 
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -275,7 +299,7 @@ async function googleCallback(req, env, url) {
   });
   if (!r.ok) {
     console.error("google token exchange", r.status, await r.text());
-    return oauthFail("Google would not confirm that sign-in.");
+    return replay("Google would not confirm that sign-in.");
   }
   const tok = await r.json();
 
@@ -307,14 +331,9 @@ async function googleCallback(req, env, url) {
     await env.DB.prepare("UPDATE users SET google_sub = ? WHERE id = ?").bind(sub, u.id).run();
   }
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: "/",
-      "set-cookie": await mintCookie(env, u),
-      "cache-control": "no-store"
-    }
-  });
+  /* the state cookie goes out with the same response that spends it, so a
+     replay fails the check above rather than reaching Google a second time */
+  return homeRedirect([await mintCookie(env, u), CLEAR_STATE]);
 }
 
 /* ---------- sync ---------- */
