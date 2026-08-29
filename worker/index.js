@@ -383,7 +383,81 @@ async function feed(env, user) {
     ex: JSON.parse(r.ex),
     from: r.from_json ? JSON.parse(r.from_json) : null
   }));
-  return json({ now: Date.now(), items });
+
+  /* Engagement rides along on the feed instead of costing a second round
+     trip. It is joined through `sessions`, so a like on a workout that was
+     later unshared stops being visible without the row being destroyed. */
+  const sc = await env.DB.prepare(
+    "SELECT c.item_id, c.user_id, c.kind, c.body FROM social c " +
+    "JOIN sessions s ON s.user_id || ':' || s.id = c.item_id " +
+    "WHERE s.shared = 1 AND s.deleted = 0 ORDER BY c.created LIMIT 2000"
+  ).all();
+
+  const social = {}, need = new Set();
+  for (const i of items) need.add(i.who);
+  for (const r of (sc.results || [])) {
+    const e = social[r.item_id] || (social[r.item_id] = { likes: [], comments: [] });
+    if (r.kind === "like") e.likes.push(r.user_id);
+    else e.comments.push({ who: r.user_id, text: r.body });
+    need.add(r.user_id);
+  }
+
+  /* Names for everyone the page will have to draw a disc for. The feed rows
+     only name people who SHARED; someone who has only ever commented would
+     otherwise render as a raw row id. */
+  const ids = [...need];
+  const people = {};
+  if (ids.length) {
+    const us = await env.DB.prepare(
+      "SELECT id, display, initials FROM users WHERE id IN (" + ids.map(() => "?").join(",") + ")"
+    ).bind(...ids).all();
+    for (const u of (us.results || [])) people[u.id] = { name: u.display, initials: u.initials };
+  }
+
+  return json({ now: Date.now(), items, social, people });
+}
+
+/* One like or one comment. The only write in the app that lands on somebody
+   else's row, which is why it checks two things the session routes never have
+   to: that the target is a real, still-shared session, and that `user_id`
+   comes from the cookie rather than the body. */
+const MAX_COMMENT = 500;
+async function socialWrite(req, env, user) {
+  const b = await readJSON(req);
+  const item = String((b && b.item) || "");
+  const kind = String((b && b.kind) || "");
+  const cut = item.indexOf(":");
+  if (cut < 1 || item.length > 130) return json({ error: "Bad item." }, 400);
+
+  const target = await env.DB.prepare(
+    "SELECT 1 FROM sessions WHERE user_id = ? AND id = ? AND shared = 1 AND deleted = 0"
+  ).bind(item.slice(0, cut), item.slice(cut + 1)).first();
+  if (!target) return json({ error: "That workout isn’t shared." }, 404);
+
+  const now = Date.now();
+
+  if (kind === "like") {
+    /* derived id: a double tap can never leave two rows behind */
+    const id = user.id + "|" + item + "|like";
+    const del = await env.DB.prepare("DELETE FROM social WHERE id = ?").bind(id).run();
+    const off = !!(del.meta && del.meta.changes);
+    if (!off)
+      await env.DB.prepare(
+        "INSERT INTO social (id, item_id, user_id, kind, body, created) VALUES (?, ?, ?, 'like', '', ?)"
+      ).bind(id, item, user.id, now).run();
+    return json({ item, kind: "like", on: !off });
+  }
+
+  if (kind === "comment") {
+    const text = String((b && b.text) || "").trim().slice(0, MAX_COMMENT);
+    if (!text) return json({ error: "Say something first." }, 400);
+    await env.DB.prepare(
+      "INSERT INTO social (id, item_id, user_id, kind, body, created) VALUES (?, ?, ?, 'comment', ?, ?)"
+    ).bind(hex(crypto.getRandomValues(new Uint8Array(16))), item, user.id, text, now).run();
+    return json({ item, kind: "comment", text });
+  }
+
+  return json({ error: "Bad kind." }, 400);
 }
 
 async function remove(env, user, id) {
@@ -430,6 +504,7 @@ async function api(req, env, url) {
 
   if (path === "sessions" && method === "GET") return pull(env, user, url);
   if (path === "feed" && method === "GET") return feed(env, user);
+  if (path === "social" && method === "POST") return socialWrite(req, env, user);
 
   if (path.startsWith("sessions/")) {
     const id = decodeURIComponent(path.slice(9));

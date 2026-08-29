@@ -22,6 +22,7 @@ if (!m) { console.error("No <script> block found in " + file); process.exit(1); 
 
 /* ---- minimal DOM ---- */
 const els = {};
+const store = new Map();          /* the fake localStorage, inspectable */
 function mkEl() {
   return { innerHTML: "", value: "", focus() {}, addEventListener() {},
            onclick: null, classList: { add() {}, remove() {} }, scrollTo() {} };
@@ -29,7 +30,11 @@ function mkEl() {
 const sandbox = {
   console,
   setTimeout: () => {},
-  localStorage: { getItem: () => null, setItem() {} },
+  localStorage: {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); }
+  },
   document: {
     getElementById: (id) => els[id] || (els[id] = mkEl()),
     querySelector: () => null,
@@ -342,6 +347,9 @@ sandbox.S.social = {
     {who:"tess",text:"360 on the press \u2014 leg day is not a joke to this man."}]}
 };
 
+/* crew cards are divs, so this counts cards and not the header's own disc */
+const feedCount = () => (viewHTML().match(/<div class="card" data-split=/g) || []).length;
+
 group("Crew feed");
 sandbox.S.live = null;
 sandbox.goHome();
@@ -354,8 +362,7 @@ ok("the calendar is replaced, not stacked", viewHTML().indexOf("calgrid") < 0);
 ok("the switch is still reachable", viewHTML().indexOf("setHome('mine')") >= 0);
 ok("bottom nav is untouched by the feed",
    barHTML().indexOf("setTab('history')") >= 0 && barHTML().indexOf("startWorkout()") >= 0);
-eq("every crew session the server sent renders",
-   (viewHTML().match(/class="avatar"/g) || []).length, CREWFEED.length);
+eq("every crew session the server sent renders", feedCount(), CREWFEED.length);
 ok("cards carry the full exercise list", viewHTML().indexOf("Barbell Bench Press") >= 0 &&
    viewHTML().indexOf("Romanian Deadlift") >= 0);
 ok("a person gets initials, not a bare name", viewHTML().indexOf(">DR<") >= 0);
@@ -372,11 +379,12 @@ ok("crew cards are not buttons",
 
 /* sharing is opt-in and per session */
 group("Sharing a session");
-const feedCount = () => (viewHTML().match(/class="avatar"/g) || []).length;
+
 sandbox.setHome("mine");
 sandbox.openSession("s3");
 ok("a finished session offers Share", viewHTML().indexOf("toggleShare()") >= 0);
-ok("nothing is shared by default", S().sessions.every(x => x.shared === undefined));
+ok("an old session is unshared until you say so",
+   S().sessions.filter(x => x.id === "s3")[0].shared === undefined);
 sandbox.toggleShare();
 eq("sharing flags that session", S().sessions.filter(x => x.id === "s3")[0].shared, true);
 ok("the button flips to Shared", viewHTML().indexOf("Shared") >= 0);
@@ -573,6 +581,7 @@ sandbox.askCancel(); sandbox.dialogYes();
 function fakeServer() {
   const api = {
     rows: new Map(), clock: 1000, puts: 0, dels: 0, unauthorized: false,
+    feed: [], social: {}, people: {}, posts: [],
     touch(id, row) { api.rows.set(id, Object.assign({ id }, row, { updated: ++api.clock })); },
     tomb(id) { api.rows.set(id, { id, deleted: 1, updated: ++api.clock }); },
     fetch(path, opts) {
@@ -584,6 +593,10 @@ function fakeServer() {
 
       if (api.unauthorized && p !== "/api/me") { status = 401; out = { error: "Signed out." }; }
       else if (p === "/api/me") out = { user: { name: "Mark", initials: "M" } };
+      else if (p === "/api/logout") out = { ok: true };
+      else if (p === "/api/feed")
+        out = { now: ++api.clock, items: api.feed, social: api.social, people: api.people };
+      else if (p === "/api/social" && method === "POST") { api.posts.push(body); out = { ok: true }; }
       else if (p === "/api/sessions" && method === "GET") {
         const since = Number(new URLSearchParams(qs || "").get("since") || 0);
         out = { now: ++api.clock,
@@ -691,6 +704,178 @@ function fakeServer() {
   sandbox.API = false;
   ok("never offered when there is no server at all",
      sandbox.authSection().indexOf("google") < 0);
+
+  /* ---- 12. the login gate ---- */
+  group("The door");
+  sandbox.API = null;
+  sandbox.render();
+  ok("before the server answers, only a splash", viewHTML().indexOf("Checking your sign-in") >= 0);
+  eq("and no bottom nav to tap", barHTML(), "");
+
+  sandbox.API = true;
+  sandbox.SY.user = null;
+  sandbox.SY.google = false;
+  sandbox.view = { name: "home" };
+  sandbox.render();
+  ok("signed out on a server, the door is all there is",
+     viewHTML().indexOf('id="loginpin"') >= 0 && viewHTML().indexOf("calgrid") < 0);
+  ok("no calendar, no crew, no export", viewHTML().indexOf("openData()") < 0);
+  ok("and no way to start a workout", barHTML().indexOf("startWorkout()") < 0);
+  sandbox.view = { name: "data" };
+  sandbox.render();
+  ok("the door cannot be routed around", viewHTML().indexOf("exportblob") < 0);
+  sandbox.SY.google = true;
+  sandbox.render();
+  ok("it offers Google when the server does",
+     viewHTML().indexOf("/api/auth/google/start") >= 0);
+
+  /* a copy with no server has nobody to sign in as, so it is never gated --
+     that is what keeps file://, the artifact and these tests working */
+  sandbox.API = false;
+  sandbox.view = { name: "home" };
+  sandbox.render();
+  ok("a standalone copy is never gated", viewHTML().indexOf("calgrid") >= 0);
+
+  /* ---- 13. one store per account ---- */
+  group("One store per account");
+  const keyOf = (u) => "racklog.proto.v2:" + u;
+  /* the groups above left a store under the bare key; adoption gets its own
+     test below, so start these accounts on a genuinely clean device */
+  store.delete("racklog.proto.v2");
+  sandbox.loadStore("ann");
+  S().sessions.push({ id: "a1", date: "2026-08-02", split: "push", ex: [] });
+  sandbox.saveLocal();
+  sandbox.loadStore("bob");
+  eq("a second account opens an empty store", S().sessions.length, 0);
+  S().sessions.push({ id: "b1", date: "2026-08-03", split: "pull", ex: [] });
+  sandbox.saveLocal();
+  sandbox.loadStore("ann");
+  eq("the first account still has its own", S().sessions.length, 1);
+  eq("and none of the other's", S().sessions[0].id, "a1");
+  ok("they are separate keys on the device",
+     store.has(keyOf("ann")) && store.has(keyOf("bob")));
+
+  /* history logged before accounts existed belongs to whoever signs in first */
+  store.set("racklog.proto.v2", JSON.stringify({ sessions:
+    [{ id: "old1", date: "2026-07-01", split: "legs", ex: [] }] }));
+  sandbox.loadStore("cass");
+  eq("a device's pre-account history is adopted", S().sessions[0].id, "old1");
+  ok("and the shared key is cleared, so a second account cannot claim it too",
+     !store.has("racklog.proto.v2"));
+  sandbox.loadStore("dee");
+  eq("the next account starts empty", S().sessions.length, 0);
+
+  /* ---- 14. signing out on a shared phone ---- */
+  group("Signing out on a shared phone");
+  const shared = fakeServer();
+  sandbox.fetch = (p, o) => shared.fetch(p, o);
+  sandbox.API = true;
+  sandbox.SY.user = { id: "ann", name: "Ann Miller", initials: "AM" };
+  sandbox.loadStore("ann");
+  S().sessions.push({ id: "a9", date: "2026-08-04", split: "push", ex: [] });
+  sandbox.saveLocal();
+  await sandbox.signOut();
+  ok("what was logged goes up before the door closes", shared.rows.has("a9"));
+  eq("you are signed out", sandbox.SY.user, null);
+  eq("the workouts leave memory", S().sessions.length, 0);
+  ok("and the account's store leaves the phone", !store.has(keyOf("ann")));
+  sandbox.render();
+  ok("the door is showing again", viewHTML().indexOf('id="loginpin"') >= 0);
+
+  /* the one case where the data stays: it never made it to the server */
+  sandbox.SY.user = { id: "ann", name: "Ann Miller", initials: "AM" };
+  sandbox.loadStore("ann");
+  S().sessions.push({ id: "a10", date: "2026-08-05", split: "pull", ex: [] });
+  sandbox.saveLocal();
+  shared.unauthorized = true;
+  await sandbox.signOut();
+  ok("an unsent workout is not deleted with the account", store.has(keyOf("ann")));
+  ok("and it says why", sandbox.syncMsg.indexOf("kept on this device") >= 0);
+  ok("it is still unreachable to the next person, under that account's key",
+     JSON.parse(store.get(keyOf("ann"))).sessions.some(x => x.id === "a10"));
+
+  /* a live workout never reaches the server, so signing out has to say so */
+  sandbox.SY.user = { id: "ann", name: "Ann Miller", initials: "AM" };
+  sandbox.loadStore("ann");
+  sandbox.startWorkout();
+  sandbox.askSignOut();
+  ok("signing out mid-workout asks first", sandbox.dlgOpen === true);
+  ok("and names what is at stake", els.dialog.innerHTML.indexOf("hasn’t been saved") >= 0);
+  sandbox.closeDialog();
+  ok("keeping the workout keeps you signed in", sandbox.SY.user !== null);
+  S().live = null;
+  sandbox.askSignOut();
+  ok("with nothing live it just signs out", sandbox.dlgOpen === false);
+  await new Promise((r) => process.nextTick(r));
+
+  /* ---- 15. likes and comments cross users ---- */
+  group("Likes and comments reach the crew");
+  const crew = fakeServer();
+  sandbox.fetch = (p, o) => crew.fetch(p, o);
+  sandbox.API = true;
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM" };
+  sandbox.loadStore("me");
+  crew.feed = CREWFEED.slice();
+  crew.social = { "danny:f1": { likes: ["sam"], comments: [{ who: "tess", text: "Big pull." }] } };
+  crew.people = { danny: { name: "Danny Ruiz", initials: "DR" },
+                  sam: { name: "Sam Okonkwo", initials: "SO" },
+                  tess: { name: "Tess Lindqvist", initials: "TL" } };
+  await sandbox.sync();
+  eq("the feed carries engagement with it", sandbox.soc("danny:f1").likes.length, 1);
+  eq("comments come down too", sandbox.soc("danny:f1").comments.length, 1);
+  sandbox.goHome(); sandbox.setHome("crew"); sandbox.toggleThread("danny:f1");
+  ok("someone else's comment renders", viewHTML().indexOf("Big pull.") >= 0);
+  ok("and a commenter gets a name, not a row id", viewHTML().indexOf(">Tess<") >= 0);
+
+  sandbox.toggleLike("danny:f1");
+  eq("a like is posted to the server", crew.posts.length, 1);
+  eq("on the right item", crew.posts[0].item, "danny:f1");
+  eq("as a like", crew.posts[0].kind, "like");
+  ok("and never carries who — the server reads that off the cookie",
+     crew.posts[0].who === undefined);
+  ok("it shows immediately, before the round trip", sandbox.liked("danny:f1"));
+  sandbox.document.getElementById("c_danny:f1").value = "Spot me next time";
+  sandbox.addComment("danny:f1");
+  eq("a comment is posted too", crew.posts[1].kind, "comment");
+  eq("with its text", crew.posts[1].text, "Spot me next time");
+  eq("and nothing else", crew.posts[1].who, undefined);
+
+  /* the server is the truth: a pull replaces whatever the tap did locally */
+  crew.social = {};
+  await sandbox.sync();
+  eq("a sync takes the server's version, not the device's",
+     sandbox.soc("danny:f1").likes.length, 0);
+
+  /* ---- 16. sharing is the default ---- */
+  group("Sharing is the default");
+  S().live = null;
+  sandbox.goHome();
+  sandbox.startWorkout();
+  sandbox.pick("Bench", "lift", "push");
+  sandbox.document.getElementById("f0_0").value = 8;
+  sandbox.document.getElementById("f0_1").value = 135;
+  sandbox.addSet(0);
+  sandbox.finish();
+  const fresh = S().sessions[S().sessions.length - 1];
+  eq("a finished workout is shared without being asked", fresh.shared, true);
+  sandbox.openSession(fresh.id);
+  ok("the session says so", viewHTML().indexOf("Shared") >= 0);
+  sandbox.toggleShare();
+  ok("and one tap opts back out", fresh.shared === undefined);
+  ok("an empty workout is still no workout at all",
+     (sandbox.startWorkout(), sandbox.finish(), S().sessions.indexOf(S().live) < 0));
+
+  /* ---- 17. the header names you ---- */
+  group("Your name in the corner");
+  S().live = null;
+  sandbox.goHome();
+  ok("the header names you instead of saying Data",
+     viewHTML().indexOf('class="userbtn"') >= 0 && viewHTML().indexOf(">Data<") < 0);
+  ok("with your initials and your first name",
+     viewHTML().indexOf(">MM<") >= 0 && viewHTML().indexOf(">Mark<") >= 0);
+  ok("and it still opens the data screen", viewHTML().indexOf('onclick="openData()"') >= 0);
+  ok("you are ink, never a split colour",
+     viewHTML().indexOf('class="who" data-person="me"') >= 0);
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

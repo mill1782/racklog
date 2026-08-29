@@ -59,3 +59,28 @@ CREATE TABLE IF NOT EXISTS tokens (
 );
 
 CREATE INDEX IF NOT EXISTS tokens_by_user ON tokens(user_id);
+
+-- Likes and comments, one row each, keyed by FEED-item id ("<user_id>:<id>").
+-- Engagement is far more frequent than posts, which is why it is rows and not
+-- a JSON blob hanging off the session.
+--
+-- `user_id` is always the signed-in user from the cookie, never anything the
+-- client sent -- the same rule /api/feed follows.
+--
+-- A like's `id` is derived (user|item|like) so a double tap cannot make two
+-- rows: the toggle is a delete on one known key, then an insert if the delete
+-- found nothing. Comment ids are random.
+--
+-- Rows outlive the session being unshared or deleted; the feed joins through
+-- `sessions`, so they simply stop being visible, and come back if it is
+-- reshared.
+CREATE TABLE IF NOT EXISTS social (
+  id       TEXT PRIMARY KEY,
+  item_id  TEXT NOT NULL,             -- "<user_id>:<session_id>"
+  user_id  TEXT NOT NULL,             -- who liked or said it
+  kind     TEXT NOT NULL,             -- 'like' | 'comment'
+  body     TEXT NOT NULL DEFAULT '',  -- the comment text; '' for a like
+  created  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS social_by_item ON social(item_id, created);

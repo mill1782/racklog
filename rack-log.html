@@ -173,6 +173,20 @@ button.card:active{transform:scale(.995)}
 
 .empty{text-align:center;color:var(--ink-3);padding:44px 20px;font-size:14px;line-height:1.6}
 
+/* the door: the only thing on screen until the server says who you are */
+.gate{max-width:320px;margin:0 auto;padding:12vh 0 40px;text-align:center}
+.brandmark{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:36px;
+  line-height:1.05;text-transform:uppercase;letter-spacing:.03em}
+.brandmark s{display:block;text-decoration:none;height:4px;width:46px;margin:10px auto 0;
+  border-radius:2px;background:var(--accent)}
+.gatesub{color:var(--ink-2);font-size:13px;line-height:1.55;margin:16px 0 22px}
+.gate .msg{text-align:center}
+/* the signed-in person, where the Data button used to be */
+.userbtn{display:flex;align-items:center;padding:4px 0;margin:0}
+.userbtn .avatar{width:28px;height:28px;font-size:12px}
+.userbtn .nm{font-size:16px}
+.userbtn:hover .nm{color:var(--accent)}
+
 .datasec{margin-bottom:28px}
 .datasec p{margin:6px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.55}
 .blob{display:block;width:100%;box-sizing:border-box;height:120px;padding:10px;
@@ -393,11 +407,7 @@ var EXTRA = {
          "Russian Twist","Sit Up","Pallof Press","Back Extension"]
 };
 /* ---------- crew ----------
-   Prototype data only. Nothing here is shared for real: the feed is seeded
-   locally so the layout can be judged. Real sharing needs the `artifact`
-   capability (the page republishes itself with the feed embedded) -- see
-   "Sharing" in HANDOFF.md for what that does and does not buy. */
-/* Who you are, and who the crew is, both come from the server now: `SY.user`
+   Who you are, and who the crew is, both come from the server now: `SY.user`
    for you, and the feed items themselves for everyone else. There are no
    fixture people any more — an empty crew tab means nobody has shared yet,
    which is the truth rather than a decorated placeholder. */
@@ -407,12 +417,17 @@ var FEEDP={};              /* user id -> {id,name,person} , built from the feed 
    there are only three slots, and a hash happily drops a three-person family
    into the same colour. Sorted order is stable across devices because the feed
    is, and it guarantees distinct colours for the first three people. */
-function buildPeople(items){
+function buildPeople(items,people){
   var names={}, ids=[];
-  items.forEach(function(x){
-    if(SY.user&&x.who===SY.user.id) return;   /* you are never a crew colour */
-    if(!names[x.who]){ names[x.who]=x.name; ids.push(x.who); }
-  });
+  function add(id,name){
+    if(SY.user&&id===SY.user.id) return;      /* you are never a crew colour */
+    if(!names[id]){ names[id]=name||id; ids.push(id); }
+  }
+  items.forEach(function(x){ add(x.who,x.name); });
+  /* the feed rows only name people who SHARED; `people` also covers someone
+     who has only ever liked or commented, who would otherwise render as a
+     raw row id */
+  if(people) Object.keys(people).forEach(function(id){ add(id,people[id].name); });
   ids.sort();
   var map={};
   ids.forEach(function(id,i){
@@ -431,23 +446,54 @@ function p2(n){return (n<10?"0":"")+n;}
 function today(){var d=new Date();
   return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
 
-/* ---------- state ---------- */
-var KEY="racklog.proto.v2", S=null;
-try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
+/* ---------- state ----------
+   The store is keyed by ACCOUNT: "racklog.proto.v2:<user id>". This is a
+   family app on shared phones, so a bare per-device key meant the next person
+   to pick up the handset saw — and on their next sync uploaded — the
+   previous person's workouts. Namespacing is what makes "Mine" mean mine.
+
+   The bare key is still the signed-out / standalone store: file://, the
+   published artifact, the tests. The first account to sign in on a device
+   that has one ADOPTS it, once, so nobody loses history logged before
+   accounts existed. See HANDOFF trap 5 before changing either key. */
+var KEY="racklog.proto.v2", SKEY="racklog.sync.v1";
+var KEYNOW=KEY, SKEYNOW=SKEY;
+function storeKey(uid){ return uid?KEY+":"+uid:KEY; }
+function syncKey(uid){ return uid?SKEY+":"+uid:SKEY; }
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 /* A new device starts EMPTY. Signing in pulls your own history down; the
    crew tab fills from the server. Nothing is invented locally. */
-if(!S||!S.sessions) S={sessions:[],live:null,tab:"history"};
-if(!S.month) S.month=today().slice(0,7);
-/* added after v2 shipped; filled in place so the storage key stays put and
-   nobody's logged workouts are wiped (see HANDOFF trap 5).
-   NOTE: likes and comments are still per-device — they are keyed by feed id
-   but never leave this browser. Making them real needs the `social` table. */
-if(!S.social) S.social={};
-/* the calendar is home: every launch opens there, whatever tab you left on,
-   and on Mine rather than the crew feed */
-S.tab="history"; S.home="mine";
-var view={name:"home"}, openThread=null;
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} syncSoon(); }
+function blank(){ return {sessions:[],live:null,tab:"history",home:"mine",
+  month:today().slice(0,7),social:{}}; }
+var S=blank(), view={name:"home"}, openThread=null;
+
+/* Swap the whole local store over to one account. Called from syncBoot, and
+   again on sign-in and sign-out — nothing else may touch KEYNOW. */
+function loadStore(uid){
+  KEYNOW=storeKey(uid); SKEYNOW=syncKey(uid);
+  var raw=lsGet(KEYNOW), sy=lsGet(SKEYNOW), adopt=false;
+  if(!raw&&uid){ raw=lsGet(KEY); sy=lsGet(SKEY); adopt=!!(raw&&raw.sessions); }
+  S=(raw&&raw.sessions)?raw:blank();
+  if(!S.month) S.month=today().slice(0,7);
+  /* filled in place rather than by bumping the key, which would wipe real
+     logged workouts (HANDOFF trap 5). Do the same for the next field. */
+  if(!S.social) S.social={};
+  /* the calendar is home: every launch opens there, whatever tab you left on,
+     and on Mine rather than the crew feed */
+  S.tab="history"; S.home="mine";
+  SY.since=(sy&&sy.since)||0; SY.shadow=(sy&&sy.shadow)||{};
+  if(adopt){ saveLocal(); saveSync(); lsDel(KEY); lsDel(SKEY); }
+}
+/* Wipe one account's local copy. Only ever called on sign-out, and only once
+   everything has reached the server — see signOut(). */
+function forget(uid){ lsDel(storeKey(uid)); lsDel(syncKey(uid)); }
+
+/* saveLocal persists; save() also schedules a sync. Likes and comments use
+   saveLocal, because they post themselves and then ask for the sync — a
+   debounced pull firing before the POST landed would revert them on screen. */
+function saveLocal(){ try{ localStorage.setItem(KEYNOW,JSON.stringify(S)); }catch(e){} }
+function save(){ saveLocal(); syncSoon(); }
 
 /* ---------- sync ----------
    The app works with no server at all: from file://, from the artifact, or
@@ -458,11 +504,8 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} s
    the last JSON we know the server has, per session id, and dirtyOps() diffs
    against it. That is why none of the fifteen mutation paths had to change:
    they all end in save(), and save() is enough. */
-var SKEY="racklog.sync.v1";
 var SY={since:0,shadow:{},user:null,google:false,feed:[]};
-try{ var _sy=JSON.parse(localStorage.getItem(SKEY));
-  if(_sy){ SY.since=_sy.since||0; SY.shadow=_sy.shadow||{}; } }catch(e){}
-function saveSync(){ try{ localStorage.setItem(SKEY,
+function saveSync(){ try{ localStorage.setItem(SKEYNOW,
   JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
 
 var API=null;              /* null = not checked, false = no server, true = server */
@@ -484,13 +527,20 @@ function apiFetch(path,opts){
       return j; });
   });
 }
+/* Nothing real renders until this answers: API===null draws the splash, and
+   API===true with no user draws the door. WHICH store to open is not knowable
+   until /api/me says who you are, which is why S starts blank and is loaded
+   here rather than at parse time. */
 function syncBoot(){
-  if(typeof fetch!=="function"||typeof location==="undefined"||location.protocol==="file:"){
-    API=false; return; }
+  var solo=function(){ API=false; loadStore(null); render(); };
+  if(typeof fetch!=="function"||typeof location==="undefined"||location.protocol==="file:")
+    return solo();
   apiFetch("/api/me").then(function(j){
     API=true; SY.user=j.user||null; SY.google=!!j.google;
-    if(SY.user) sync(); else if(view.name==="data") render();
-  },function(){ API=false; });
+    loadStore(SY.user?SY.user.id:null);
+    render();
+    if(SY.user) sync();
+  },solo);
 }
 function syncSoon(){
   if(API!==true||!SY.user||typeof setTimeout!=="function") return;
@@ -533,10 +583,15 @@ function sync(){
         SY.shadow[r.id]=j2;
       });
       SY.since=j.now||SY.since; syncMsg=""; saveSync();
-      if(changed){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+      if(changed) saveLocal();
       return apiFetch("/api/feed").then(function(f){
         SY.feed=f.items||[];
-        FEEDP=buildPeople(SY.feed);
+        /* The server owns engagement now. S.social is a cache of what it last
+           said, kept only so the feed still draws while offline; it is
+           replaced wholesale, never merged. */
+        if(f.social) S.social=f.social;
+        FEEDP=buildPeople(SY.feed,f.people);
+        saveLocal();
         syncing=false;
         /* never re-render a session in progress: it would wipe the stepper
            values that have been typed but not added yet */
@@ -557,12 +612,44 @@ function signIn(){
   if(!name||!pin) return msg("authmsg","Enter your name and PIN.",true);
   msg("authmsg","Signing in\u2026",false);
   apiFetch("/api/login",{method:"POST",body:JSON.stringify({name:name,pin:pin})})
-    .then(function(j){ SY.user=j.user; syncMsg=""; render(); sync(); },
+    .then(function(j){ SY.user=j.user; syncMsg=""; loadStore(j.user.id);
+            openThread=null; view={name:"home"}; render(); sync(); },
           function(e){ msg("authmsg",(e&&e.message)||"Couldn\u2019t sign in.",true); });
 }
+/* Sign-out has to leave the handset clean, because the next person to sign in
+   is a different member of the family. Order matters: flush what is queued,
+   drop the server token, and only then delete this account's local copy. If
+   the flush did not clear — offline, or the server refused — the copy STAYS,
+   because losing a logged workout is worse than leaving it on disk under a
+   key no other account opens. */
+/* A live workout is not in S.sessions, so it never syncs -- signing out would
+   wipe it with the rest of the local store and nothing on the server would
+   have it. Same dialog as Cancel, naming the same cost. */
+function askSignOut(){
+  var l=S.live, n=0;
+  if(!l) return signOut();
+  l.ex.forEach(function(x){n+=x.sets.length;});
+  confirmDialog("Sign out mid-workout?",
+    n ? "Your live "+SPLIT_NAME[l.split]+" workout has <b>"+n+"</b> set"+(n===1?"":"s")+
+        " logged. It has not been saved, and signing out clears this device."
+      : "Your live "+SPLIT_NAME[l.split]+" workout hasn’t been saved. Signing out clears it.",
+    "Sign out anyway","Keep logging",signOut);
+}
 function signOut(){
-  var done=function(){ SY.user=null; SY.since=0; SY.shadow={}; syncMsg=""; saveSync(); render(); };
-  apiFetch("/api/logout",{method:"POST"}).then(done,done);
+  var uid=SY.user?SY.user.id:null;
+  var after=function(clean){
+    var done=function(){
+      if(clean&&uid) forget(uid);
+      SY.user=null; SY.feed=[]; FEEDP={}; SY.since=0; SY.shadow={};
+      syncMsg=clean?"":"Some changes hadn\u2019t uploaded yet, so they were kept on this device.";
+      S=blank(); KEYNOW=storeKey(null); SKEYNOW=syncKey(null);
+      openThread=null; view={name:"home"}; render();
+    };
+    return apiFetch("/api/logout",{method:"POST"}).then(done,done);
+  };
+  /* returns the round trip, so a caller -- and the test suite -- can wait */
+  return sync().then(function(){ return after(dirtyOps().length===0); },
+                     function(){ return after(false); });
 }
 
 /* ---------- helpers ---------- */
@@ -678,6 +765,10 @@ function exSummary(k,sets){
 /* ---------- render ---------- */
 var V=document.getElementById("view"), BAR=document.getElementById("bar");
 function render(){
+  /* Signed out on a server, nothing else renders: no calendar, no export, no
+     crew, no way to log a set into a store that belongs to somebody else. */
+  if(API===null) return renderSplash();
+  if(API===true&&!SY.user) return renderGate();
   if(view.name==="home")renderHome();
   else if(view.name==="session")renderSession();
   else if(view.name==="data")renderData();
@@ -732,10 +823,8 @@ function crewHTML(){
   if(!items.length){
     if(API===false) return '<div class="empty">The crew feed needs the server.<br>'+
       'This copy runs on its own.</div>';
-    if(!SY.user) return '<div class="empty">Sign in to see your crew.<br>'+
-      'Open Data, up in the corner.</div>';
-    return '<div class="empty">Nothing shared yet.<br>'+
-      'Open a finished workout and tap Share to crew.</div>';
+    return '<div class="empty">Nothing here yet.<br>'+
+      'Finish a workout and it shows up for the crew.</div>';
   }
   return '<div class="list">'+items.map(function(s){
     var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
@@ -821,11 +910,21 @@ function renderHome(){
   }
   return renderHomeShell(body);
 }
+/* Your own name and disc open the data screen. Signed out — which only
+   happens with no server at all — it falls back to the old text button,
+   because there is nobody to name. */
+function userChip(){
+  if(!SY.user) return '<button class="back" onclick="openData()">Data</button>';
+  return '<button class="userbtn" onclick="openData()" aria-label="Your account and data">'+
+    '<span class="who" data-person="me"><span class="avatar">'+
+      esc(initials(SY.user.name))+'</span><span class="nm">'+
+      esc(firstName(SY.user.name))+'</span></span></button>';
+}
 function renderHomeShell(body){
   V.innerHTML='<header><div><div class="eyebrow">'+
     (S.live?'Workout in progress':dstr(today(),true))+'</div><h1>'+
     (S.tab==="history"?"Rack Log":"Exercises")+'</h1></div>'+
-    '<button class="back" onclick="openData()">Data</button></header>'+scroll(body);
+    userChip()+'</header>'+scroll(body);
   BAR.innerHTML = homeBar(true);
 }
 /* the persistent nav — shown on home and on an exercise page, so the
@@ -997,11 +1096,15 @@ function authSection(){
     '<p>Signed in as <b>'+esc(SY.user.name)+'</b>. '+
     (syncMsg?esc(syncMsg):'Your workouts follow you to every device you sign in on.')+'</p>'+
     '<div class="datarow"><button class="btn ghost" onclick="syncNow()">Sync now</button>'+
-    '<button class="btn ghost" onclick="signOut()">Sign out</button></div></div>';
+    '<button class="btn ghost" onclick="askSignOut()">Sign out</button></div></div>';
   return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>Sign in to keep these workouts on every device. Anything already logged '+
-    'here is uploaded, not replaced.</p>'+
-    (SY.google
+    'here is uploaded, not replaced.</p>'+signInForm()+'</div>';
+}
+/* One form, two homes: the door, and the data screen on a standalone copy
+   that later finds a server. Two of these would drift. */
+function signInForm(){
+  return (SY.google
       ? '<a class="btn link" href="/api/auth/google/start">Continue with Google</a>'+
         '<div class="orline">or</div>'
       : '')+
@@ -1009,7 +1112,18 @@ function authSection(){
     '<input class="fld" id="loginpin" type="password" inputmode="numeric" '+
       'placeholder="PIN" autocomplete="current-password">'+
     '<div class="datarow"><button class="btn" onclick="signIn()">Sign in</button></div>'+
-    '<div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div></div>';
+    '<div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div>';
+}
+/* The two pre-app screens. They share the shell so the door does not jump
+   when /api/me answers. */
+function gateShell(body){
+  V.innerHTML=scroll('<div class="gate"><div class="brandmark">Rack Log<s></s></div>'+body+'</div>');
+  BAR.innerHTML="";
+}
+function renderSplash(){ gateShell('<p class="gatesub">Checking your sign-in…</p>'); }
+function renderGate(){
+  gateShell('<p class="gatesub">Sign in to log a workout. Your history follows you '+
+    'to every device you sign in on.</p>'+signInForm());
 }
 function renderData(){
   var n=S.sessions.length;
@@ -1149,17 +1263,29 @@ function barChart(pts){
 /* ---------- actions ---------- */
 function setTab(t){S.tab=t;view={name:"home"};save();render();}
 function setHome(v){S.home=v;openThread=null;view={name:"home"};save();render();}
+/* Engagement is optimistic on screen and authoritative on the server. There
+   is no retry queue: if the post fails, the sync that follows pulls the truth
+   back and the tap simply undoes itself, which is honest — a like nobody
+   received should not keep glowing. */
+function postSocial(body){
+  if(API!==true||!SY.user) return;              /* standalone stays local */
+  apiFetch("/api/social",{method:"POST",body:JSON.stringify(body)})
+    .then(syncSoon,function(){
+      syncMsg="That didn\u2019t reach the crew."; syncSoon(); });
+}
 function toggleLike(id){
   var l=socW(id).likes, i=l.indexOf(meId());
   if(i>=0) l.splice(i,1); else l.push(meId());
-  save(); render();
+  saveLocal(); render();
+  postSocial({item:id,kind:"like"});
 }
 function toggleThread(id){openThread=(openThread===id?null:id);render();}
 function addComment(id){
   var el=document.getElementById("c_"+id); if(!el) return;
   var t=el.value.trim(); if(!t) return;
   socW(id).comments.push({who:meId(),text:t});
-  el.value=""; save(); render();
+  el.value=""; saveLocal(); render();
+  postSocial({item:id,kind:"comment",text:t});
 }
 /* Start someone else's workout as a template: their exercise list and split,
    your own numbers. The copy remembers where it came from, which is what
@@ -1187,9 +1313,10 @@ function startFrom(item){
   });
   openThread=null; view={name:"session"}; save(); render();
 }
-/* Sharing is explicit and per-session: a workout you never share stays yours.
-   Prototype only -- this flips a flag the local feed reads, it does not
-   publish anything to anyone. */
+/* Sharing is now the DEFAULT — finish() sets it — because a crew feed nobody
+   posts to is an empty screen, and the family asked for the feed. This is the
+   opt-out: it clears the flag, the next sync clears it on the server, and the
+   workout drops off everyone else's Crew tab. */
 function toggleShare(){
   var s=S.sessions.filter(function(x){return x.id===view.id;})[0];
   if(!s) return;
@@ -1263,7 +1390,9 @@ function finish(){
   var l=S.live;
   l.ex=l.ex.filter(function(x){return x.sets.length;});
   l.ex.forEach(function(x){delete x.draft;});
-  if(l.ex.length){ l.id="u"+Date.now(); S.sessions.push(l); S.month=ym(l.date); }
+  /* shared by default; the Share button on the finished session is the way
+     out, and it is one tap */
+  if(l.ex.length){ l.id="u"+Date.now(); l.shared=true; S.sessions.push(l); S.month=ym(l.date); }
   S.live=null; S.tab="history"; view={name:"home"}; save(); render();
 }
 
