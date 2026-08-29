@@ -381,5 +381,178 @@ ok("the copy credits the original", viewHTML().indexOf("Danny&rsquo;s Push day")
 ok("your own card offers a rerun instead", viewHTML().indexOf("Do it again") >= 0);
 sandbox.setHome("mine");
 
-console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+/* ---- 9. the date is real, not a fixture ---- */
+group("Dates");
+const pad = n => String(n).padStart(2, "0");
+const now = new Date();
+const realToday = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+ok("today() is an ISO day", /^\d{4}-\d{2}-\d{2}$/.test(sandbox.today()));
+eq("today() is the local day, not UTC", sandbox.today(), realToday);
+eq("ago() calls today today", sandbox.ago(sandbox.today()), "today");
+sandbox.startWorkout();
+eq("a workout started now is dated today", S().live.date, sandbox.today());
+sandbox.askCancel(); sandbox.dialogYes();
+/* the calendar must never page past the current month */
+sandbox.setMonth(0);
+S().month = sandbox.today().slice(0, 7);
+sandbox.render();
+ok("the calendar can't page into the future",
+   viewHTML().indexOf('onclick="setMonth(1)" disabled') >= 0);
+
+/* ---- 10. export and import ---- */
+group("Export / import");
+sandbox.openData();
+ok("the data screen renders", viewHTML().indexOf(">Your data</h1>") >= 0);
+ok("the calendar is still one tap away", barHTML().indexOf("setTab('history')") >= 0);
+
+const dump = sandbox.exportText();
+const parsed = JSON.parse(dump);
+eq("export carries every session", parsed.sessions.length, S().sessions.length);
+eq("export is stamped with a schema version", parsed.version, 2);
+ok("export is stamped with a time", typeof parsed.exported === "string");
+
+ok("an empty paste is refused", !!sandbox.parseImport("   ").err);
+ok("junk is refused", !!sandbox.parseImport("not json").err);
+ok("JSON with no sessions is refused", !!sandbox.parseImport('{"app":"racklog"}').err);
+ok("a session with a bad date is refused",
+   !!sandbox.parseImport('{"sessions":[{"id":"x","date":"nope","ex":[]}]}').err);
+ok("a session with no exercises array is refused",
+   !!sandbox.parseImport('{"sessions":[{"id":"x","date":"2026-07-04"}]}').err);
+ok("a real export is accepted", !sandbox.parseImport(dump).err);
+
+const hadSessions = S().sessions.length;
+sandbox.document.getElementById("importblob").value = dump;
+sandbox.askImport();
+ok("importing asks first", sandbox.dlgOpen === true);
+ok("the prompt names what is replaced",
+   els.dialog.innerHTML.indexOf("<b>" + hadSessions + " sessions</b>") >= 0);
+sandbox.closeDialog();
+eq("declining keeps your data", S().sessions.length, hadSessions);
+
+sandbox.askImport(); sandbox.dialogYes();
+eq("a round trip preserves every session", S().sessions.length, hadSessions);
+eq("import lands you back on the calendar", screen(), "home/calendar");
+
+sandbox.document.getElementById("importblob").value = JSON.stringify(
+  { sessions: [{ id: "imported", date: "2026-07-04", split: "pull", ex: [] }], social: {} });
+sandbox.openData(); sandbox.askImport(); sandbox.dialogYes();
+eq("import replaces rather than merges", S().sessions.length, 1);
+eq("and opens the imported month", S().month, "2026-07");
+
+/* importing over a running workout would silently drop it */
+sandbox.startWorkout();
+sandbox.openData();
+sandbox.document.getElementById("importblob").value = dump;
+sandbox.askImport();
+ok("importing mid-workout is refused", sandbox.dlgOpen === false);
+ok("and says why", String(els.impmsg.textContent).indexOf("Finish or cancel") >= 0);
+sandbox.askCancel(); sandbox.dialogYes();
+
+/* ---- 11. sync ----
+ * Against a fake server that mirrors worker/index.js: last-write-wins per
+ * session, tombstones for deletes, "everything changed since N" for pulls.
+ * This is the riskiest code in the app and the part a DOM stub can still
+ * exercise properly, because it is all state and promises.
+ */
+function fakeServer() {
+  const api = {
+    rows: new Map(), clock: 1000, puts: 0, dels: 0, unauthorized: false,
+    touch(id, row) { api.rows.set(id, Object.assign({ id }, row, { updated: ++api.clock })); },
+    tomb(id) { api.rows.set(id, { id, deleted: 1, updated: ++api.clock }); },
+    fetch(path, opts) {
+      opts = opts || {};
+      const method = opts.method || "GET";
+      const [p, qs] = path.split("?");
+      const body = opts.body ? JSON.parse(opts.body) : null;
+      let out = null, status = 200;
+
+      if (api.unauthorized && p !== "/api/me") { status = 401; out = { error: "Signed out." }; }
+      else if (p === "/api/me") out = { user: { name: "Mark", initials: "M" } };
+      else if (p === "/api/sessions" && method === "GET") {
+        const since = Number(new URLSearchParams(qs || "").get("since") || 0);
+        out = { now: ++api.clock,
+                sessions: [...api.rows.values()].filter(r => r.updated > since) };
+      } else if (p.startsWith("/api/sessions/")) {
+        const id = decodeURIComponent(p.slice("/api/sessions/".length));
+        if (method === "PUT") {
+          api.puts++;
+          api.rows.set(id, Object.assign({}, body, { id, updated: ++api.clock, deleted: 0 }));
+          out = { id, updated: api.clock };
+        } else if (method === "DELETE") {
+          api.dels++; api.tomb(id); out = { id, deleted: 1, updated: api.clock };
+        }
+      }
+      if (!out) { status = 404; out = { error: "Not found." }; }
+      return Promise.resolve({ ok: status === 200, status, json: () => Promise.resolve(out) });
+    }
+  };
+  return api;
+}
+
+(async () => {
+  group("Sync");
+  /* signed out / no server at all: the standalone path */
+  sandbox.API = false;
+  ok("with no server the data screen says so",
+     sandbox.authSection().indexOf("runs on its own") >= 0);
+  eq("and syncing is a no-op", await sandbox.sync(), undefined);
+
+  const server = fakeServer();
+  sandbox.fetch = (p, o) => server.fetch(p, o);
+  sandbox.API = true;
+  sandbox.SY.user = { name: "Mark", initials: "M" };
+  sandbox.SY.since = 0;
+  sandbox.SY.shadow = {};
+
+  ok("signed in, the data screen offers a sync",
+     sandbox.authSection().indexOf("Sync now") >= 0);
+
+  const mine = S().sessions.length;
+  eq("everything local starts out dirty", sandbox.dirtyOps().length, mine);
+  await sandbox.sync();
+  eq("a first sync uploads every session", server.rows.size, mine);
+  eq("and nothing is left dirty", sandbox.dirtyOps().length, 0);
+
+  /* the key-order regression: a round trip must not look like a change */
+  const puts = server.puts;
+  await sandbox.sync();
+  eq("a clean sync re-uploads nothing", server.puts, puts);
+
+  /* a workout logged on another device */
+  server.touch("phone1", { date: "2026-06-01", split: "legs", ex: [] });
+  await sandbox.sync();
+  ok("a workout from another device arrives", sandbox.idxOf("phone1") >= 0);
+  eq("and is not echoed back up", server.puts, puts);
+
+  /* deleted elsewhere -- the tombstone is why this works at all */
+  server.tomb("phone1");
+  await sandbox.sync();
+  eq("a delete on another device removes it here", sandbox.idxOf("phone1"), -1);
+
+  /* deleted here */
+  const victim = S().sessions[0].id;
+  S().sessions.splice(0, 1);
+  await sandbox.sync();
+  ok("deleting here tombstones it on the server",
+     server.rows.get(victim) && server.rows.get(victim).deleted === 1);
+  eq("and it stays gone locally", sandbox.idxOf(victim), -1);
+
+  /* an edit here wins over what the server last saw */
+  S().sessions.push({ id: "local1", date: "2026-06-02", split: "push", ex: [] });
+  await sandbox.sync();
+  S().sessions[sandbox.idxOf("local1")].split = "cardio";
+  await sandbox.sync();
+  eq("an edit here reaches the server", server.rows.get("local1").split, "cardio");
+
+  /* an expired cookie */
+  server.unauthorized = true;
+  S().sessions[sandbox.idxOf("local1")].split = "pull";
+  await sandbox.sync();
+  eq("a 401 signs you out locally", sandbox.SY.user, null);
+  ok("and says so on the data screen",
+     sandbox.authSection().indexOf("Sign in") >= 0);
+  ok("the unsent edit is still queued", sandbox.dirtyOps().length > 0);
+
+  console.log("\n" + pass + " passed, " + fail + " failed");
+  process.exit(fail ? 1 : 0);
+})();

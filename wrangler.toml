@@ -1,0 +1,19 @@
+name = "racklog"
+main = "worker/index.js"
+compatibility_date = "2026-08-29"
+account_id = "2f2569917e53a95a5f8776e9879eaf64"
+
+# rack-log.html and the icons ship inside the worker bundle, so there is no
+# assets directory to keep in sync and still no build step. HTML is a Text
+# module by default; PNG needs saying, and fallthrough keeps the defaults.
+rules = [
+  { type = "Data", globs = ["**/*.png"], fallthrough = true }
+]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "racklog"
+database_id = "b0ead17b-fba1-42e8-a4e9-9e7e1cb35dd6"

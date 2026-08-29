@@ -168,6 +168,24 @@ button.card:active{transform:scale(.995)}
 
 .empty{text-align:center;color:var(--ink-3);padding:44px 20px;font-size:14px;line-height:1.6}
 
+.datasec{margin-bottom:28px}
+.datasec p{margin:6px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.55}
+.blob{display:block;width:100%;box-sizing:border-box;height:120px;padding:10px;
+  background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);
+  border-radius:10px;font-family:"JetBrains Mono",ui-monospace,monospace;
+  font-size:11px;line-height:1.5;resize:vertical}
+.datarow{display:flex;gap:8px;margin-top:10px}
+.datarow>*{flex:1}
+.filebtn{display:flex;align-items:center;justify-content:center;text-align:center;
+  cursor:pointer}
+.filebtn input{display:none}
+.fld{display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:11px 12px;
+  background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;
+  font-family:"Barlow",sans-serif;font-size:16px}
+.fld:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.msg{margin-top:10px;font-size:13px;line-height:1.5;color:var(--ink-2);min-height:1px}
+.msg.bad{color:var(--accent)}
+
 .livehead{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 14px;margin-bottom:12px;border-left:3px solid var(--c)}
 .splitpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
@@ -457,13 +475,18 @@ var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
   legs:"Legs movements",other:"Core &amp; other"};
 var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["cardio","Cardio"],["other","Other"]];
 var SPLIT_NAME={push:"Push",pull:"Pull",legs:"Legs",cardio:"Cardio",other:"Other"};
-var TODAY="2026-08-28";
+/* The real current day, in the user's own timezone, recomputed per call so a
+   page left open overnight rolls over. Deliberately NOT toISOString(): that is
+   UTC, which files a 7pm workout in the US under tomorrow's date. */
+function p2(n){return (n<10?"0":"")+n;}
+function today(){var d=new Date();
+  return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
 
 /* ---------- state ---------- */
 var KEY="racklog.proto.v2", S=null;
 try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
 if(!S||!S.sessions) S={sessions:SEED.slice(),live:null,tab:"history"};
-if(!S.month) S.month=TODAY.slice(0,7);
+if(!S.month) S.month=today().slice(0,7);
 /* added after v2 shipped; filled in place so the storage key stays put and
    nobody's logged workouts are wiped (see HANDOFF trap 4) */
 if(!S.social) S.social=seedSocial();
@@ -471,7 +494,117 @@ if(!S.social) S.social=seedSocial();
    and on Mine rather than the crew feed */
 S.tab="history"; S.home="mine";
 var view={name:"home"}, openThread=null;
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} syncSoon(); }
+
+/* ---------- sync ----------
+   The app works with no server at all: from file://, from the artifact, or
+   signed out. API stays false in those cases and every function below is a
+   no-op, which is what keeps rack-log.html standalone.
+
+   Nothing here tracks dirty state at the call sites. Instead SY.shadow holds
+   the last JSON we know the server has, per session id, and dirtyOps() diffs
+   against it. That is why none of the fifteen mutation paths had to change:
+   they all end in save(), and save() is enough. */
+var SKEY="racklog.sync.v1";
+var SY={since:0,shadow:{},user:null};
+try{ var _sy=JSON.parse(localStorage.getItem(SKEY));
+  if(_sy){ SY.since=_sy.since||0; SY.shadow=_sy.shadow||{}; } }catch(e){}
+function saveSync(){ try{ localStorage.setItem(SKEY,
+  JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
+
+var API=null;              /* null = not checked, false = no server, true = server */
+var syncing=false, syncMsg="", syncTimer=null;
+
+/* key order is fixed here so a round trip never looks like a change and
+   re-uploads itself on every sync */
+function sjson(x){ return JSON.stringify({id:x.id,date:x.date,split:x.split,
+  ex:x.ex,shared:!!x.shared,from:x.from||null}); }
+function idxOf(id){ for(var i=0;i<S.sessions.length;i++)
+  if(S.sessions[i].id===id) return i; return -1; }
+
+function apiFetch(path,opts){
+  opts=opts||{}; opts.credentials="same-origin"; opts.headers=opts.headers||{};
+  if(opts.body) opts.headers["Content-Type"]="application/json";
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok){ var e=new Error(j.error||("HTTP "+r.status)); e.status=r.status; throw e; }
+      return j; });
+  });
+}
+function syncBoot(){
+  if(typeof fetch!=="function"||typeof location==="undefined"||location.protocol==="file:"){
+    API=false; return; }
+  apiFetch("/api/me").then(function(j){
+    API=true; SY.user=j.user||null;
+    if(SY.user) sync(); else if(view.name==="data") render();
+  },function(){ API=false; });
+}
+function syncSoon(){
+  if(API!==true||!SY.user||typeof setTimeout!=="function") return;
+  if(syncTimer&&typeof clearTimeout==="function") clearTimeout(syncTimer);
+  syncTimer=setTimeout(function(){ syncTimer=null; sync(); },1200);
+}
+function dirtyOps(){
+  var ops=[], seen={};
+  S.sessions.forEach(function(x){ seen[x.id]=1; var j=sjson(x);
+    if(SY.shadow[x.id]!==j) ops.push({op:"put",id:x.id,body:x,j:j}); });
+  Object.keys(SY.shadow).forEach(function(id){
+    if(!seen[id]) ops.push({op:"del",id:id}); });
+  return ops;
+}
+/* returns the round trip, so a caller -- and the test suite -- can wait on it */
+function sync(){
+  if(API!==true||!SY.user||syncing) return Promise.resolve();
+  syncing=true;
+  var ops=dirtyOps(), pending={}, chain=Promise.resolve();
+  ops.forEach(function(o){ pending[o.id]=1; chain=chain.then(function(){
+    var u="/api/sessions/"+encodeURIComponent(o.id);
+    return o.op==="put"
+      ? apiFetch(u,{method:"PUT",body:JSON.stringify(o.body)}).then(function(){ SY.shadow[o.id]=o.j; })
+      : apiFetch(u,{method:"DELETE"}).then(function(){ delete SY.shadow[o.id]; });
+  });});
+  return chain.then(function(){ return apiFetch("/api/sessions?since="+SY.since); })
+    .then(function(j){
+      var changed=false;
+      (j.sessions||[]).forEach(function(r){
+        if(pending[r.id]) return;       /* a local edit we just pushed wins */
+        var i=idxOf(r.id);
+        if(r.deleted){ if(i>=0){ S.sessions.splice(i,1); changed=true; }
+          delete SY.shadow[r.id]; return; }
+        var clean={id:r.id,date:r.date,split:r.split,ex:r.ex};
+        if(r.shared) clean.shared=true;
+        if(r.from) clean.from=r.from;
+        var j2=sjson(clean);
+        if(i<0){ S.sessions.push(clean); changed=true; }
+        else if(sjson(S.sessions[i])!==j2){ S.sessions[i]=clean; changed=true; }
+        SY.shadow[r.id]=j2;
+      });
+      SY.since=j.now||SY.since; syncing=false; syncMsg=""; saveSync();
+      if(changed){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+      /* never re-render a session in progress: it would wipe the stepper
+         values that have been typed but not added yet */
+      if((changed||view.name==="data")&&view.name!=="session") render();
+    },function(e){
+      syncing=false; saveSync();
+      if(e&&e.status===401){ SY.user=null; syncMsg="Signed out. Sign in again to sync."; }
+      else syncMsg="Offline. Your workouts are safe on this device.";
+      if(view.name==="data") render();
+    });
+}
+function syncNow(){ syncMsg="Syncing\u2026"; if(view.name==="data") render(); sync(); }
+function signIn(){
+  var n=document.getElementById("loginname"), k=document.getElementById("loginpin");
+  var name=n?String(n.value||"").trim():"", pin=k?String(k.value||"").trim():"";
+  if(!name||!pin) return msg("authmsg","Enter your name and PIN.",true);
+  msg("authmsg","Signing in\u2026",false);
+  apiFetch("/api/login",{method:"POST",body:JSON.stringify({name:name,pin:pin})})
+    .then(function(j){ SY.user=j.user; syncMsg=""; render(); sync(); },
+          function(e){ msg("authmsg",(e&&e.message)||"Couldn\u2019t sign in.",true); });
+}
+function signOut(){
+  var done=function(){ SY.user=null; SY.since=0; SY.shadow={}; syncMsg=""; saveSync(); render(); };
+  apiFetch("/api/logout",{method:"POST"}).then(done,done);
+}
 
 /* ---------- helpers ---------- */
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){
@@ -488,7 +621,7 @@ function hhmm(m){return m>=60?(Math.floor(m/60)+"h "+(m%60?(m%60)+"m":"")).trim(
 function dstr(d,long){var dt=new Date(d+"T12:00:00");
   return dt.toLocaleDateString("en-US",long?{weekday:"long",month:"long",day:"numeric"}
     :{weekday:"short",month:"short",day:"numeric"});}
-function ago(d){var n=Math.round((new Date(TODAY+"T12:00:00")-new Date(d+"T12:00:00"))/864e5);
+function ago(d){var n=Math.round((new Date(today()+"T12:00:00")-new Date(d+"T12:00:00"))/864e5);
   return n<=0?"today":n===1?"yesterday":n+" days ago";}
 function sorted(){return S.sessions.slice().sort(function(a,b){return b.date.localeCompare(a.date);});}
 function historyOf(name){var out=[];
@@ -524,7 +657,7 @@ function firstDow(m){return new Date(m+"-01T12:00:00").getDay();}
 function inMonth(m){return sorted().filter(function(s){return ym(s.date)===m;});}
 function earliestMonth(){
   var ms=S.sessions.map(function(s){return ym(s.date);}).sort();
-  return ms.length?ms[0]:ym(TODAY);}
+  return ms.length?ms[0]:ym(today());}
 
 /* ---------- crew helpers ---------- */
 function personOf(id){
@@ -586,20 +719,21 @@ var V=document.getElementById("view"), BAR=document.getElementById("bar");
 function render(){
   if(view.name==="home")renderHome();
   else if(view.name==="session")renderSession();
+  else if(view.name==="data")renderData();
   else renderExercise();
 }
 function scroll(html){return '<div class="scroll">'+html+'</div>';}
 
 /* month grid: one cell per day, a dot per session, coloured by split */
 function calendar(){
-  var m=S.month, n=daysIn(m), start=firstDow(m), byDay={}, i;
+  var m=S.month, n=daysIn(m), start=firstDow(m), byDay={}, i, td=today();
   inMonth(m).forEach(function(s){ (byDay[s.date]=byDay[s.date]||[]).push(s); });
   var cells="";
   for(i=0;i<start;i++) cells+='<div class="cell pad"></div>';
   for(i=1;i<=n;i++){
     var date=m+"-"+String(i).padStart(2,"0"), ss=byDay[date]||[];
     var cls="cell"+(ss.length?" on":"")+
-      (date===TODAY?(S.live?" live":" today"):"");
+      (date===td?(S.live?" live":" today"):"");
     var dots=ss.length
       ? '<span class="dots">'+ss.slice(0,3).map(function(s){
           return '<i data-split="'+s.split+'"></i>';}).join("")+'</span>'
@@ -613,7 +747,7 @@ function calendar(){
   var ms=inMonth(m), days=Object.keys(byDay).length, mins=0, vol=0;
   ms.forEach(function(s){var t=totals(s); mins+=t.mins; vol+=t.vol;});
   var canPrev = shiftMonth(m,-1) >= earliestMonth();
-  var canNext = m < ym(TODAY);
+  var canNext = m < ym(today());
   return '<div class="calwrap">'+
     '<div class="calhead">'+
       '<button class="calnav" onclick="setMonth(-1)"'+(canPrev?"":" disabled")+
@@ -722,8 +856,9 @@ function renderHome(){
 }
 function renderHomeShell(body){
   V.innerHTML='<header><div><div class="eyebrow">'+
-    (S.live?'Workout in progress':dstr(TODAY,true))+'</div><h1>'+
-    (S.tab==="history"?"Rack Log":"Exercises")+'</h1></div></header>'+scroll(body);
+    (S.live?'Workout in progress':dstr(today(),true))+'</div><h1>'+
+    (S.tab==="history"?"Rack Log":"Exercises")+'</h1></div>'+
+    '<button class="back" onclick="openData()">Data</button></header>'+scroll(body);
   BAR.innerHTML = homeBar(true);
 }
 /* the persistent nav — shown on home and on an exercise page, so the
@@ -876,6 +1011,123 @@ function renderExercise(){
   BAR.innerHTML=homeBar(false);
 }
 
+/* ---------- data: export and import ----------
+   The only way a workout gets off this device. localStorage is per-browser, so
+   without this a cleared cache or a new phone loses the lot. Copy/paste is the
+   primary path on purpose: a published artifact's sandbox makes a download the
+   page starts itself inert, so Download only works once this is self-hosted. */
+function exportText(){
+  return JSON.stringify({app:"racklog",version:2,exported:new Date().toISOString(),
+    sessions:S.sessions, social:S.social||{}},null,1);
+}
+function authSection(){
+  if(API===false) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>This copy runs on its own \u2014 nothing syncs, and nothing leaves this device. '+
+    'Export below to move it somewhere.</p></div>';
+  if(API===null) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Checking for a server\u2026</p></div>';
+  if(SY.user) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Signed in as <b>'+esc(SY.user.name)+'</b>. '+
+    (syncMsg?esc(syncMsg):'Your workouts follow you to every device you sign in on.')+'</p>'+
+    '<div class="datarow"><button class="btn ghost" onclick="syncNow()">Sync now</button>'+
+    '<button class="btn ghost" onclick="signOut()">Sign out</button></div></div>';
+  return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Sign in to keep these workouts on every device. Anything already logged '+
+    'here is uploaded, not replaced.</p>'+
+    '<input class="fld" id="loginname" placeholder="Name" autocomplete="username">'+
+    '<input class="fld" id="loginpin" type="password" inputmode="numeric" '+
+      'placeholder="PIN" autocomplete="current-password">'+
+    '<div class="datarow"><button class="btn" onclick="signIn()">Sign in</button></div>'+
+    '<div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div></div>';
+}
+function renderData(){
+  var n=S.sessions.length;
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button>'+
+    '<h1 style="margin-top:8px">Your data</h1></div></header>'+
+    scroll(
+      authSection()+
+      '<div class="datasec"><div class="eyebrow">Export</div><p>'+
+        plural(n,"finished session")+' on this device. Keep a copy somewhere safe '+
+        '&mdash; clearing this browser&rsquo;s site data loses everything.</p>'+
+        '<textarea class="blob" id="exportblob" readonly>'+esc(exportText())+'</textarea>'+
+        '<div class="datarow"><button class="btn" onclick="copyExport()">Copy</button>'+
+        '<button class="btn ghost" onclick="downloadExport()">Download</button></div>'+
+        '<div class="msg" id="expmsg"></div></div>'+
+      '<div class="datasec"><div class="eyebrow">Import</div><p>Paste an export below, '+
+        'or choose a file. This <b>replaces</b> every workout on this device &mdash; '+
+        'export first.</p>'+
+        '<textarea class="blob" id="importblob" placeholder="Paste an export here"></textarea>'+
+        '<div class="datarow"><button class="btn" onclick="askImport()">Import</button>'+
+        '<label class="btn ghost filebtn">Choose file<input type="file" '+
+        'accept="application/json,.json" onchange="importFile(this)"></label></div>'+
+        '<div class="msg" id="impmsg"></div></div>');
+  BAR.innerHTML=homeBar(false);
+}
+function openData(){view={name:"data",from:view};render();}
+function msg(id,text,bad){var e=document.getElementById(id);
+  if(e){e.className="msg"+(bad?" bad":"");e.textContent=text;}}
+
+function copyExport(){
+  var t=document.getElementById("exportblob"), fallback=function(){
+    try{ t.select(); t.setSelectionRange(0,999999);
+      msg("expmsg",document.execCommand("copy")?"Copied.":"Press Ctrl/Cmd-C to copy.",false);
+    }catch(e){ msg("expmsg","Select the text above and copy it.",true); }};
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t.value).then(function(){msg("expmsg","Copied.",false);},fallback);
+  else fallback();
+}
+function downloadExport(){
+  try{
+    var u=URL.createObjectURL(new Blob([exportText()],{type:"application/json"}));
+    var a=document.createElement("a");
+    a.href=u; a.download="rack-log-"+today()+".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(u);},1000);
+    msg("expmsg","Saved to your downloads. If nothing happened, use Copy instead.",false);
+  }catch(e){ msg("expmsg","Downloads are blocked here \u2014 use Copy instead.",true); }
+}
+function importFile(input){
+  var f=input.files&&input.files[0]; if(!f) return;
+  var r=new FileReader();
+  r.onload=function(){var b=document.getElementById("importblob");
+    if(b)b.value=r.result;
+    msg("impmsg","Loaded "+f.name+". Tap Import to apply it.",false);};
+  r.onerror=function(){msg("impmsg","Couldn\u2019t read that file.",true);};
+  r.readAsText(f);
+}
+/* structural checks only -- enough to refuse a wrong file without rejecting
+   fields a later version adds */
+function parseImport(txt){
+  var d,i,x;
+  if(!txt||!txt.trim()) return {err:"Paste an export first."};
+  try{ d=JSON.parse(txt); }catch(e){ return {err:"That isn\u2019t valid JSON."}; }
+  if(!d||!Array.isArray(d.sessions)) return {err:"No sessions in that export."};
+  for(i=0;i<d.sessions.length;i++){ x=d.sessions[i];
+    if(!x||typeof x.id!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||!Array.isArray(x.ex))
+      return {err:"Session "+(i+1)+" is missing its id, date or exercises."};
+  }
+  return {data:d};
+}
+function askImport(){
+  if(S.live) return msg("impmsg","Finish or cancel your workout first.",true);
+  var b=document.getElementById("importblob");
+  var r=parseImport(b?b.value:"");
+  if(r.err) return msg("impmsg",r.err,true);
+  msg("impmsg","",false);
+  confirmDialog("Import and replace?",
+    "This device has <b>"+plural(S.sessions.length,"session")+"</b>. Importing replaces "+
+    "them with <b>"+plural(r.data.sessions.length,"session")+"</b> from the export. "+
+    "There is no undo.",
+    "Replace","Keep mine",function(){ doImport(r.data); });
+}
+function doImport(d){
+  S.sessions=d.sessions;
+  S.social=(d.social&&typeof d.social==="object")?d.social:{};
+  S.month=S.sessions.length?ym(sorted()[0].date):today().slice(0,7);
+  S.tab="history"; S.home="mine"; view={name:"home"};
+  save(); render();
+}
+
 var CW=340,CH=152,CL=36,CR=18,CT=16,CB=26;
 function xlabel(d){return dstr(d).replace(/^[A-Za-z]+, /,"");}
 function lineChart(pts){
@@ -952,7 +1204,7 @@ function doWorkout(id){
     "Start theirs","Keep mine",function(){startFrom(item);});
 }
 function startFrom(item){
-  S.live={id:"live",date:TODAY,split:item.split,ex:[],
+  S.live={id:"live",date:today(),split:item.split,ex:[],
           from:{who:item.who,src:item.id,split:item.split}};
   item.ex.forEach(function(x){
     var kind=kindOf(x), prev=priorTo(x.name,S.live);
@@ -977,7 +1229,7 @@ function setMonth(n){S.month=shiftMonth(S.month,n);save();render();}
 /* home always means the calendar, never whichever tab was last open */
 function goHome(){S.tab="history";view={name:"home"};save();render();}
 function resume(){view={name:"session"};render();}
-function startWorkout(){S.live={id:"live",date:TODAY,split:"push",ex:[]};view={name:"session"};save();render();}
+function startWorkout(){S.live={id:"live",date:today(),split:"push",ex:[]};view={name:"session"};save();render();}
 function setSplit(k){var t=editable(); if(!t)return; t.split=k;save();render();}
 function openSession(id){view={name:"session",id:id};render();}
 /* The one session logging actions write to: the live workout, or a finished
@@ -1156,4 +1408,8 @@ function defaultDraft(kind){
 }
 
 render();
+syncBoot();
+if(typeof document.addEventListener==="function")
+  document.addEventListener("visibilitychange",function(){
+    if(!document.hidden) sync(); });
 </script>

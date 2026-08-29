@@ -12,3 +12,9 @@ Desktop.ini
 # Node (none committed today; here for when the prototype grows a toolchain)
 node_modules/
 npm-debug.log*
+
+# Wrangler: local D1 state, build output, and logs. The local database is a
+# scratch copy for `wrangler dev --local` and must never be committed.
+.wrangler/
+dist/
+.dev.vars
