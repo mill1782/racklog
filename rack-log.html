@@ -374,37 +374,6 @@ var LIB_KIND={}; CARDIO_LIB.forEach(function(c){LIB_KIND[c.name]=c.kind;});
 function kindOf(x){return x.kind||LIB_KIND[x.name]||"lift";}
 function isCardio(k){return k!=="lift";}
 
-/* ---------- seed: sessions from the spreadsheet ---------- */
-var SEED = [
- {id:"s1",date:"2026-08-19",split:"push",ex:[
-   {name:"Bench",sets:[[8,135],[6,145],[3,155],[6,135],[18,95]]},
-   {name:"Iso Lateral Shoulder Press",sets:[[15,50],[11,70],[7,100],[4,110],[16,50]]},
-   {name:"Tricep Pulldown",sets:[[16,47.5]]},
-   {name:"Lateral Raise",sets:[[10,25]]}]},
- {id:"s2",date:"2026-08-21",split:"pull",ex:[
-   {name:"Preacher Bar Curl",sets:[[12,40],[12,50],[12,60],[6,70]]},
-   {name:"Seated Row",sets:[[12,100],[11,115],[7,120]]},
-   {name:"Machine Lat Pull Down",sets:[[12,95],[12,100],[12,105],[10,110]]},
-   {name:"Rear Delt",sets:[[12,90],[10,105],[10,105]]}]},
- {id:"s3",date:"2026-08-24",split:"legs",ex:[
-   {name:"Leg Curl",sets:[[15,60],[15,90],[12,120],[10,135]]},
-   {name:"Leg Extension",sets:[[15,85],[15,100],[12,115],[10,135],[10,145]]},
-   {name:"Squat",sets:[[10,135],[8,155],[8,165]]},
-   {name:"Calf Raise",sets:[[10,165],[12,165]]}]},
- {id:"s4",date:"2026-08-26",split:"push",ex:[
-   {name:"Lateral Raise",sets:[[12,25],[10,30],[8,30]]},
-   {name:"Incline Bench",sets:[[10,115],[5,135],[8,125],[5,125],[11,105]]},
-   {name:"Arnold Press",sets:[[10,30],[8,35],[4,40]]},
-   {name:"Pec Fly",sets:[[12,105],[12,120],[12,135]]},
-   {name:"Tricep Pushdown",sets:[[15,115],[12,115],[12,130],[12,145],[8,160]]}]},
- {id:"s5",date:"2026-08-28",split:"pull",ex:[
-   {name:"Rear Delt",sets:[[12,100],[10,110],[8,115]]},
-   {name:"Cable Lat Pulldown",sets:[[12,47.5],[12,50],[10,57.5],[8,65]]},
-   {name:"Dumbbell Row",sets:[[12,50],[12,55],[8,60],[5,65]]},
-   {name:"Dumbbell Preacher Curl",sets:[[12,25],[7,30],[12,25]]},
-   {name:"Reverse Curls",sets:[[12,20],[6,25],[8,20]]},
-   {name:"Bar RDL",sets:[[12,135],[12,185],[12,205]]}]}
-];
 /* Library of movements, classified. Anything you've already logged is
    pulled out of here automatically, so the picker never lists it twice. */
 var EXTRA = {
@@ -428,54 +397,29 @@ var EXTRA = {
    locally so the layout can be judged. Real sharing needs the `artifact`
    capability (the page republishes itself with the feed embedded) -- see
    "Sharing" in HANDOFF.md for what that does and does not buy. */
-var ME={id:"me",name:"Mark Miller",person:"me"};
-var CREW=[
-  {id:"danny",name:"Danny Ruiz",person:"p1"},
-  {id:"sam",name:"Sam Okonkwo",person:"p2"},
-  {id:"tess",name:"Tess Lindqvist",person:"p3"}
-];
-/* Shared sessions carry the same shape as your own, plus `who`. */
-var FEED=[
- {id:"f1",who:"danny",date:"2026-08-27",split:"push",ex:[
-   {name:"Barbell Bench Press",sets:[[10,155],[8,175],[5,195],[8,175]]},
-   {name:"Overhead Press",sets:[[10,95],[8,105],[6,115]]},
-   {name:"Cable Fly",sets:[[12,40],[12,45],[10,50]]},
-   {name:"Skullcrusher",sets:[[12,65],[10,75],[8,85]]}]},
- {id:"f2",who:"tess",date:"2026-08-27",split:"cardio",ex:[
-   {name:"Treadmill Run",kind:"tread",sets:[[28,6.2,1]]},
-   {name:"Rower",kind:"machine",sets:[[15,7]]}]},
- {id:"f3",who:"sam",date:"2026-08-26",split:"legs",ex:[
-   {name:"Leg Press",sets:[[12,270],[10,320],[8,360],[8,360]]},
-   {name:"Romanian Deadlift",sets:[[10,155],[10,175],[8,185]]},
-   {name:"Walking Lunge",sets:[[12,40],[12,40],[10,50]]},
-   {name:"Seated Calf Raise",sets:[[15,90],[15,110],[12,130]]}]},
- {id:"f4",who:"danny",date:"2026-08-24",split:"pull",ex:[
-   {name:"Deadlift",sets:[[5,275],[3,315],[1,345]]},
-   {name:"Barbell Row",sets:[[10,135],[10,145],[8,155]]},
-   {name:"Hammer Curl",sets:[[12,30],[10,35],[8,40]]}]},
- {id:"f5",who:"sam",date:"2026-08-23",split:"pull",ex:[
-   {name:"Chest Supported Row",sets:[[12,90],[12,100],[10,110]]},
-   {name:"Face Pull",sets:[[15,40],[15,45],[15,50]]},
-   {name:"Cable Curl",sets:[[12,50],[12,60],[10,70]]}]},
- {id:"f6",who:"tess",date:"2026-08-22",split:"legs",ex:[
-   {name:"Goblet Squat",sets:[[12,50],[12,60],[10,70]]},
-   {name:"Hip Thrust",sets:[[12,185],[12,205],[10,225]]},
-   {name:"Leg Extension",sets:[[15,70],[15,85],[12,100]]}]}
-];
-/* Likes and comments, keyed by feed-item id (a fixture's "f1", or your own
-   session's id once you share it). Seeded on first load like SEED is. */
-function seedSocial(){return {
-  f1:{likes:["sam","tess"],comments:[
-    {who:"sam",text:"195 for 5 is moving. What are you chasing?"},
-    {who:"danny",text:"225 by November."}]},
-  f2:{likes:["danny"],comments:[]},
-  f3:{likes:["danny","tess"],comments:[
-    {who:"tess",text:"360 on the press — leg day is not a joke to this man."}]},
-  f4:{likes:["sam"],comments:[
-    {who:"sam",text:"345 pull. Did the bar bend or was that you?"}]},
-  f5:{likes:[],comments:[]},
-  f6:{likes:["danny","sam"],comments:[]}
-};}
+/* Who you are, and who the crew is, both come from the server now: `SY.user`
+   for you, and the feed items themselves for everyone else. There are no
+   fixture people any more — an empty crew tab means nobody has shared yet,
+   which is the truth rather than a decorated placeholder. */
+var FEEDP={};              /* user id -> {id,name,person} , built from the feed */
+/* Person colours are deliberately off the bumper-plate hues so a disc never
+   reads as a split. Assigned by sorted position rather than by hashing the id:
+   there are only three slots, and a hash happily drops a three-person family
+   into the same colour. Sorted order is stable across devices because the feed
+   is, and it guarantees distinct colours for the first three people. */
+function buildPeople(items){
+  var names={}, ids=[];
+  items.forEach(function(x){
+    if(SY.user&&x.who===SY.user.id) return;   /* you are never a crew colour */
+    if(!names[x.who]){ names[x.who]=x.name; ids.push(x.who); }
+  });
+  ids.sort();
+  var map={};
+  ids.forEach(function(id,i){
+    map[id]={id:id,name:names[id],person:"p"+((i%3)+1)};
+  });
+  return map;
+}
 var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
   legs:"Legs movements",other:"Core &amp; other"};
 var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["cardio","Cardio"],["other","Other"]];
@@ -490,11 +434,15 @@ function today(){var d=new Date();
 /* ---------- state ---------- */
 var KEY="racklog.proto.v2", S=null;
 try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
-if(!S||!S.sessions) S={sessions:SEED.slice(),live:null,tab:"history"};
+/* A new device starts EMPTY. Signing in pulls your own history down; the
+   crew tab fills from the server. Nothing is invented locally. */
+if(!S||!S.sessions) S={sessions:[],live:null,tab:"history"};
 if(!S.month) S.month=today().slice(0,7);
 /* added after v2 shipped; filled in place so the storage key stays put and
-   nobody's logged workouts are wiped (see HANDOFF trap 4) */
-if(!S.social) S.social=seedSocial();
+   nobody's logged workouts are wiped (see HANDOFF trap 5).
+   NOTE: likes and comments are still per-device — they are keyed by feed id
+   but never leave this browser. Making them real needs the `social` table. */
+if(!S.social) S.social={};
 /* the calendar is home: every launch opens there, whatever tab you left on,
    and on Mine rather than the crew feed */
 S.tab="history"; S.home="mine";
@@ -511,7 +459,7 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} s
    against it. That is why none of the fifteen mutation paths had to change:
    they all end in save(), and save() is enough. */
 var SKEY="racklog.sync.v1";
-var SY={since:0,shadow:{},user:null};
+var SY={since:0,shadow:{},user:null,google:false,feed:[]};
 try{ var _sy=JSON.parse(localStorage.getItem(SKEY));
   if(_sy){ SY.since=_sy.since||0; SY.shadow=_sy.shadow||{}; } }catch(e){}
 function saveSync(){ try{ localStorage.setItem(SKEY,
@@ -584,11 +532,17 @@ function sync(){
         else if(sjson(S.sessions[i])!==j2){ S.sessions[i]=clean; changed=true; }
         SY.shadow[r.id]=j2;
       });
-      SY.since=j.now||SY.since; syncing=false; syncMsg=""; saveSync();
+      SY.since=j.now||SY.since; syncMsg=""; saveSync();
       if(changed){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
-      /* never re-render a session in progress: it would wipe the stepper
-         values that have been typed but not added yet */
-      if((changed||view.name==="data")&&view.name!=="session") render();
+      return apiFetch("/api/feed").then(function(f){
+        SY.feed=f.items||[];
+        FEEDP=buildPeople(SY.feed);
+        syncing=false;
+        /* never re-render a session in progress: it would wipe the stepper
+           values that have been typed but not added yet */
+        if(view.name!=="session") render();
+      },function(){ syncing=false;
+        if((changed||view.name==="data")&&view.name!=="session") render(); });
     },function(e){
       syncing=false; saveSync();
       if(e&&e.status===401){ SY.user=null; syncMsg="Signed out. Sign in again to sync."; }
@@ -665,18 +619,20 @@ function earliestMonth(){
   return ms.length?ms[0]:ym(today());}
 
 /* ---------- crew helpers ---------- */
+function meId(){ return SY.user?SY.user.id:"me"; }
 function personOf(id){
-  if(id===ME.id) return ME;
-  return CREW.filter(function(c){return c.id===id;})[0] || {id:id,name:id,person:"p1"};}
+  if(SY.user&&id===SY.user.id)
+    return {id:id,name:SY.user.name,person:"me"};   /* you are --ink, never --accent */
+  return FEEDP[id] || {id:id,name:id,person:"p1"};}
 function initials(n){
   return n.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join("").toUpperCase();}
 function firstName(n){return n.split(/\s+/)[0];}
 function plural(n,w){return n+" "+w+(n===1?"":"s");}
 /* your shared sessions and the crew's, newest first */
-function crewFeed(){
-  var mine=S.sessions.filter(function(s){return s.shared;}).map(function(s){
-    return {id:s.id,who:ME.id,date:s.date,split:s.split,ex:s.ex,from:s.from||null};});
-  return FEED.concat(mine).sort(function(a,b){return b.date.localeCompare(a.date);});}
+/* The feed is whatever the server last handed back — one source of truth, so
+   a session you share appears for you exactly as it appears for everyone else.
+   It refreshes on every sync, which a share triggers via save(). */
+function crewFeed(){ return SY.feed||[]; }
 function feedItem(id){
   return crewFeed().filter(function(x){return x.id===id;})[0]||null;}
 
@@ -686,7 +642,7 @@ function feedItem(id){
 var NOSOC={likes:[],comments:[]};
 function soc(id){return S.social[id]||NOSOC;}
 function socW(id){return S.social[id]||(S.social[id]={likes:[],comments:[]});}
-function liked(id){return soc(id).likes.indexOf(ME.id)>=0;}
+function liked(id){return soc(id).likes.indexOf(meId())>=0;}
 
 /* ---------- lineage ----------
    A workout started from someone else's carries from:{who,src}. The copy
@@ -773,8 +729,14 @@ function calendar(){
    nothing to open. */
 function crewHTML(){
   var items=crewFeed();
-  if(!items.length) return '<div class="empty">Nothing shared yet.<br>'+
-    'Open a finished workout and tap Share to crew.</div>';
+  if(!items.length){
+    if(API===false) return '<div class="empty">The crew feed needs the server.<br>'+
+      'This copy runs on its own.</div>';
+    if(!SY.user) return '<div class="empty">Sign in to see your crew.<br>'+
+      'Open Data, up in the corner.</div>';
+    return '<div class="empty">Nothing shared yet.<br>'+
+      'Open a finished workout and tap Share to crew.</div>';
+  }
   return '<div class="list">'+items.map(function(s){
     var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
     if(t.hasLift) parts.push(plural(t.sets,"set"),
@@ -784,7 +746,7 @@ function crewHTML(){
       '<div class="rowbetween"><div class="who" data-person="'+p.person+'">'+
         '<span class="avatar">'+esc(initials(p.name))+'</span>'+
         '<span class="nm">'+esc(firstName(p.name))+'</span>'+
-        (s.who===ME.id?'<span class="you">You</span>':'')+
+        (s.mine?'<span class="you">You</span>':'')+
       '</div><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
       lineage(s)+
       '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
@@ -811,7 +773,7 @@ function socialHTML(s){
       '" onclick="toggleThread(\''+jstr(s.id)+'\')">Reply'+
       (e.comments.length?' <span class="n">'+e.comments.length+'</span>':'')+'</button>'+
     '<button class="act grow" onclick="doWorkout(\''+jstr(s.id)+'\')">'+
-      (s.who===ME.id?'Do it again':'Do this workout')+'</button></div>';
+      (s.mine?'Do it again':'Do this workout')+'</button></div>';
   if(!open) return row;
   var thread=e.comments.map(function(c){
     var p=personOf(c.who);
@@ -1188,15 +1150,15 @@ function barChart(pts){
 function setTab(t){S.tab=t;view={name:"home"};save();render();}
 function setHome(v){S.home=v;openThread=null;view={name:"home"};save();render();}
 function toggleLike(id){
-  var l=socW(id).likes, i=l.indexOf(ME.id);
-  if(i>=0) l.splice(i,1); else l.push(ME.id);
+  var l=socW(id).likes, i=l.indexOf(meId());
+  if(i>=0) l.splice(i,1); else l.push(meId());
   save(); render();
 }
 function toggleThread(id){openThread=(openThread===id?null:id);render();}
 function addComment(id){
   var el=document.getElementById("c_"+id); if(!el) return;
   var t=el.value.trim(); if(!t) return;
-  socW(id).comments.push({who:ME.id,text:t});
+  socW(id).comments.push({who:meId(),text:t});
   el.value=""; save(); render();
 }
 /* Start someone else's workout as a template: their exercise list and split,

@@ -117,7 +117,9 @@ function same(a, b) {
 }
 
 function publicUser(u) {
-  return { name: u.display, initials: u.initials };
+  /* `id` is the opaque row id, not a secret; the page needs it to tell its own
+     feed items apart from the crew's and to key its likes. */
+  return { id: u.id, name: u.display, initials: u.initials };
 }
 
 async function readJSON(req) {
@@ -355,6 +357,35 @@ async function push(req, env, user, id) {
 }
 
 /* tombstone, never a real delete — see schema.sql */
+/* ---------- the crew feed ----------
+   The first query in the app that is NOT scoped to a single user_id — a feed
+   that cannot cross users is not a feed. `shared` is the only thing keeping it
+   honest, and it is opt-in per session, so nothing lands here that its owner
+   did not deliberately post. */
+async function feed(env, user) {
+  const rs = await env.DB.prepare(
+    "SELECT s.user_id, s.id, s.date, s.split, s.ex, s.from_json, u.display, u.initials " +
+    "FROM sessions s JOIN users u ON u.id = s.user_id " +
+    "WHERE s.shared = 1 AND s.deleted = 0 " +
+    "ORDER BY s.date DESC, s.updated DESC LIMIT 200"
+  ).all();
+  const items = (rs.results || []).map((r) => ({
+    /* Composite id, and it has to be. Session ids are client-generated, so two
+       people can both hold an "s1"; unqualified they would collide, and likes,
+       comments and lineage are all keyed by this id. */
+    id: r.user_id + ":" + r.id,
+    who: r.user_id,
+    name: r.display,
+    initials: r.initials,
+    mine: r.user_id === user.id,
+    date: r.date,
+    split: r.split,
+    ex: JSON.parse(r.ex),
+    from: r.from_json ? JSON.parse(r.from_json) : null
+  }));
+  return json({ now: Date.now(), items });
+}
+
 async function remove(env, user, id) {
   const now = Date.now();
   await env.DB.prepare(
@@ -398,6 +429,7 @@ async function api(req, env, url) {
   if (!user) return json({ error: "Signed out." }, 401);
 
   if (path === "sessions" && method === "GET") return pull(env, user, url);
+  if (path === "feed" && method === "GET") return feed(env, user);
 
   if (path.startsWith("sessions/")) {
     const id = decodeURIComponent(path.slice(9));

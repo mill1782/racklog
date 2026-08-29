@@ -40,6 +40,48 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(m[1], sandbox, { filename: "rack-log.html<script>" });
 
+/* Mark's real history, imported from 'Untitled spreadsheet.xlsx'.
+ *
+ * This lives here, not in the app: a new account starts EMPTY, so the app
+ * ships no invented workouts at all. The tests below need history to have
+ * anything to assert about, so they load it deliberately — which is where a
+ * fixture belongs anyway. */
+const SEED = [
+ {id:"s1",date:"2026-08-19",split:"push",ex:[
+   {name:"Bench",sets:[[8,135],[6,145],[3,155],[6,135],[18,95]]},
+   {name:"Iso Lateral Shoulder Press",sets:[[15,50],[11,70],[7,100],[4,110],[16,50]]},
+   {name:"Tricep Pulldown",sets:[[16,47.5]]},
+   {name:"Lateral Raise",sets:[[10,25]]}]},
+ {id:"s2",date:"2026-08-21",split:"pull",ex:[
+   {name:"Preacher Bar Curl",sets:[[12,40],[12,50],[12,60],[6,70]]},
+   {name:"Seated Row",sets:[[12,100],[11,115],[7,120]]},
+   {name:"Machine Lat Pull Down",sets:[[12,95],[12,100],[12,105],[10,110]]},
+   {name:"Rear Delt",sets:[[12,90],[10,105],[10,105]]}]},
+ {id:"s3",date:"2026-08-24",split:"legs",ex:[
+   {name:"Leg Curl",sets:[[15,60],[15,90],[12,120],[10,135]]},
+   {name:"Leg Extension",sets:[[15,85],[15,100],[12,115],[10,135],[10,145]]},
+   {name:"Squat",sets:[[10,135],[8,155],[8,165]]},
+   {name:"Calf Raise",sets:[[10,165],[12,165]]}]},
+ {id:"s4",date:"2026-08-26",split:"push",ex:[
+   {name:"Lateral Raise",sets:[[12,25],[10,30],[8,30]]},
+   {name:"Incline Bench",sets:[[10,115],[5,135],[8,125],[5,125],[11,105]]},
+   {name:"Arnold Press",sets:[[10,30],[8,35],[4,40]]},
+   {name:"Pec Fly",sets:[[12,105],[12,120],[12,135]]},
+   {name:"Tricep Pushdown",sets:[[15,115],[12,115],[12,130],[12,145],[8,160]]}]},
+ {id:"s5",date:"2026-08-28",split:"pull",ex:[
+   {name:"Rear Delt",sets:[[12,100],[10,110],[8,115]]},
+   {name:"Cable Lat Pulldown",sets:[[12,47.5],[12,50],[10,57.5],[8,65]]},
+   {name:"Dumbbell Row",sets:[[12,50],[12,55],[8,60],[5,65]]},
+   {name:"Dumbbell Preacher Curl",sets:[[12,25],[7,30],[12,25]]},
+   {name:"Reverse Curls",sets:[[12,20],[6,25],[8,20]]},
+   {name:"Bar RDL",sets:[[12,135],[12,185],[12,205]]}]}
+];
+/* pinned before the fixture goes in: the shipped app invents nothing */
+const startedEmpty = sandbox.S.sessions.length === 0 && sandbox.S.live === null;
+const startedUnshared = JSON.stringify(sandbox.S.social) === "{}";
+sandbox.S.sessions = JSON.parse(JSON.stringify(SEED));
+sandbox.render();
+
 /* ---- tiny assert harness ---- */
 let pass = 0, fail = 0;
 function ok(name, cond, detail) {
@@ -63,16 +105,18 @@ const screen = () =>
 
 /* ---- 1. seed data mirrors the spreadsheet ---- */
 group("Seed data (from 'Untitled spreadsheet.xlsx')");
+ok("a new device starts with no workouts at all", startedEmpty);
+ok("and with no likes or comments invented", startedUnshared);
 eq("5 sessions seeded", S().sessions.length, 5);
 const names = new Set();
-sandbox.SEED.forEach(s => s.ex.forEach(x => names.add(x.name)));
+SEED.forEach(s => s.ex.forEach(x => names.add(x.name)));
 /* 23 exercise entries across 5 sessions, but Lateral Raise and Rear Delt
    each appear twice, so 21 distinct movements. */
 eq("21 distinct exercises", names.size, 21);
-const bench = sandbox.SEED[0].ex[0];
+const bench = SEED[0].ex[0];
 eq("Bench keeps its 5 sets", bench.sets.length, 5);
 eq("Bench top set is 3x155", JSON.stringify(bench.sets[2]), "[3,155]");
-eq("half-plate weights survive", sandbox.SEED[0].ex[2].sets[0][1], 47.5);
+eq("half-plate weights survive", SEED[0].ex[2].sets[0][1], 47.5);
 
 /* ---- 2. lifting: estimated 1RM and the PR rule ---- */
 group("Lifting");
@@ -246,7 +290,58 @@ ok("an empty workout says nothing is lost",
    els.dialog.innerHTML.indexOf("Nothing is logged yet") >= 0);
 sandbox.dialogYes();
 
-/* ---- 9. the crew feed ---- */
+/* The crew feed is the server's now, so the fixture lives here and is
+ * installed in the shape GET /api/feed actually returns: a composite id, the
+ * poster's display name and initials, and `mine`. The page invents no people.
+ */
+const CREWFEED = [
+ {id:"danny:f1",who:"danny",name:"Danny Ruiz",initials:"DR",mine:false,
+  date:"2026-08-27",split:"push",from:null,ex:[
+   {name:"Barbell Bench Press",sets:[[10,155],[8,175],[5,195],[8,175]]},
+   {name:"Overhead Press",sets:[[10,95],[8,105],[6,115]]},
+   {name:"Cable Fly",sets:[[12,40],[12,45],[10,50]]},
+   {name:"Skullcrusher",sets:[[12,65],[10,75],[8,85]]}]},
+ {id:"tess:f2",who:"tess",name:"Tess Lindqvist",initials:"TL",mine:false,
+  date:"2026-08-27",split:"cardio",from:null,ex:[
+   {name:"Treadmill Run",kind:"tread",sets:[[28,6.2,1]]},
+   {name:"Rower",kind:"machine",sets:[[15,7]]}]},
+ {id:"sam:f3",who:"sam",name:"Sam Okonkwo",initials:"SO",mine:false,
+  date:"2026-08-26",split:"legs",from:null,ex:[
+   {name:"Leg Press",sets:[[12,270],[10,320],[8,360],[8,360]]},
+   {name:"Romanian Deadlift",sets:[[10,155],[10,175],[8,185]]},
+   {name:"Walking Lunge",sets:[[12,40],[12,40],[10,50]]},
+   {name:"Seated Calf Raise",sets:[[15,90],[15,110],[12,130]]}]},
+ {id:"danny:f4",who:"danny",name:"Danny Ruiz",initials:"DR",mine:false,
+  date:"2026-08-24",split:"pull",from:null,ex:[
+   {name:"Deadlift",sets:[[5,275],[3,315],[1,345]]},
+   {name:"Barbell Row",sets:[[10,135],[10,145],[8,155]]},
+   {name:"Hammer Curl",sets:[[12,30],[10,35],[8,40]]}]},
+ {id:"sam:f5",who:"sam",name:"Sam Okonkwo",initials:"SO",mine:false,
+  date:"2026-08-23",split:"pull",from:null,ex:[
+   {name:"Chest Supported Row",sets:[[12,90],[12,100],[10,110]]},
+   {name:"Face Pull",sets:[[15,40],[15,45],[15,50]]},
+   {name:"Cable Curl",sets:[[12,50],[12,60],[10,70]]}]},
+ {id:"tess:f6",who:"tess",name:"Tess Lindqvist",initials:"TL",mine:false,
+  date:"2026-08-22",split:"legs",from:null,ex:[
+   {name:"Goblet Squat",sets:[[12,50],[12,60],[10,70]]},
+   {name:"Hip Thrust",sets:[[12,185],[12,205],[10,225]]},
+   {name:"Leg Extension",sets:[[15,70],[15,85],[12,100]]}]}
+];
+/* what the sync handler does when /api/feed answers */
+function setFeed(items) {
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM" };
+  sandbox.SY.feed = items;
+  sandbox.FEEDP = sandbox.buildPeople(items);
+}
+setFeed(CREWFEED.slice());
+sandbox.S.social = {
+  "danny:f1":{likes:["sam","tess"],comments:[
+    {who:"sam",text:"195 for 5 is moving. What are you chasing?"},
+    {who:"danny",text:"225 by November."}]},
+  "sam:f3":{likes:["danny","tess"],comments:[
+    {who:"tess",text:"360 on the press \u2014 leg day is not a joke to this man."}]}
+};
+
 group("Crew feed");
 sandbox.S.live = null;
 sandbox.goHome();
@@ -259,13 +354,17 @@ ok("the calendar is replaced, not stacked", viewHTML().indexOf("calgrid") < 0);
 ok("the switch is still reachable", viewHTML().indexOf("setHome('mine')") >= 0);
 ok("bottom nav is untouched by the feed",
    barHTML().indexOf("setTab('history')") >= 0 && barHTML().indexOf("startWorkout()") >= 0);
-eq("every seeded crew session renders",
-   (viewHTML().match(/class="avatar"/g) || []).length, sandbox.FEED.length);
+eq("every crew session the server sent renders",
+   (viewHTML().match(/class="avatar"/g) || []).length, CREWFEED.length);
 ok("cards carry the full exercise list", viewHTML().indexOf("Barbell Bench Press") >= 0 &&
    viewHTML().indexOf("Romanian Deadlift") >= 0);
 ok("a person gets initials, not a bare name", viewHTML().indexOf(">DR<") >= 0);
 ok("each person keeps their own colour",
    viewHTML().indexOf('data-person="p1"') >= 0 && viewHTML().indexOf('data-person="p2"') >= 0);
+eq("three people get three distinct colours",
+   new Set(Object.keys(sandbox.FEEDP).map(k => sandbox.FEEDP[k].person)).size, 3);
+ok("a name the server did not send never appears",
+   viewHTML().indexOf("Mark Miller") < 0);
 ok("cardio in the feed reads as time, not weight",
    viewHTML().indexOf("min cardio") >= 0);
 ok("crew cards are not buttons",
@@ -282,15 +381,24 @@ sandbox.toggleShare();
 eq("sharing flags that session", S().sessions.filter(x => x.id === "s3")[0].shared, true);
 ok("the button flips to Shared", viewHTML().indexOf("Shared") >= 0);
 sandbox.goHome(); sandbox.setHome("crew");
-eq("a shared session joins the feed", feedCount(), sandbox.FEED.length + 1);
+eq("sharing alone does not fake it into the feed", feedCount(), CREWFEED.length);
+
+/* ...it appears when the server sends it back, which is what a sync does */
+const s3 = S().sessions.filter(x => x.id === "s3")[0];
+setFeed([{ id: "me:s3", who: "me", name: "Mark Miller", initials: "MM", mine: true,
+           date: s3.date, split: s3.split, ex: s3.ex, from: null }].concat(CREWFEED));
+sandbox.render();
+eq("once synced it is in the feed", feedCount(), CREWFEED.length + 1);
 ok("your own entry is marked", viewHTML().indexOf('data-person="me"') >= 0 &&
    viewHTML().indexOf(">You<") >= 0);
-ok("the feed is in date order",
+ok("your own card offers 'Do it again'", viewHTML().indexOf("Do it again") >= 0);
+ok("the feed is in the order the server sent",
    viewHTML().indexOf("Danny") < viewHTML().indexOf("Sam"));
 sandbox.openSession("s3"); sandbox.toggleShare();
-ok("unsharing removes it again", S().sessions.filter(x => x.id === "s3")[0].shared === undefined);
+ok("unsharing clears the flag", S().sessions.filter(x => x.id === "s3")[0].shared === undefined);
+setFeed(CREWFEED.slice());
 sandbox.goHome(); sandbox.setHome("crew");
-eq("feed is back to the crew's own", feedCount(), sandbox.FEED.length);
+eq("feed is back to the crew's own", feedCount(), CREWFEED.length);
 sandbox.setHome("mine");
 
 /* ---- 10. likes and comments ---- */
@@ -298,39 +406,39 @@ group("Likes and comments");
 sandbox.S.live = null;
 sandbox.goHome(); sandbox.setHome("crew");
 ok("seeded likes show a count", viewHTML().indexOf('<span class="n">2</span>') >= 0);
-ok("nothing is liked by you at the start", !sandbox.liked("f1"));
-sandbox.toggleLike("f1");
-ok("liking records you", sandbox.liked("f1"));
-eq("and bumps the count", sandbox.soc("f1").likes.length, 3);
+ok("nothing is liked by you at the start", !sandbox.liked("danny:f1"));
+sandbox.toggleLike("danny:f1");
+ok("liking records you", sandbox.liked("danny:f1"));
+eq("and bumps the count", sandbox.soc("danny:f1").likes.length, 3);
 ok("the button reflects it", viewHTML().indexOf('aria-pressed="true"') >= 0);
-sandbox.toggleLike("f1");
-ok("liking again takes it back", !sandbox.liked("f1"));
-eq("count returns", sandbox.soc("f1").likes.length, 2);
+sandbox.toggleLike("danny:f1");
+ok("liking again takes it back", !sandbox.liked("danny:f1"));
+eq("count returns", sandbox.soc("danny:f1").likes.length, 2);
 
 ok("threads are collapsed by default", viewHTML().indexOf('class="thread"') < 0);
-ok("a card with no comments still offers Reply", viewHTML().indexOf("toggleThread('f5')") >= 0);
-sandbox.toggleThread("f1");
+ok("a card with no comments still offers Reply", viewHTML().indexOf("toggleThread('sam:f5')") >= 0);
+sandbox.toggleThread("danny:f1");
 ok("opening shows the thread", viewHTML().indexOf('class="thread"') >= 0);
 ok("seeded comments render", viewHTML().indexOf("225 by November") >= 0);
 ok("a commenter gets their own disc", viewHTML().indexOf('class="cmt" data-person="p2"') >= 0);
-sandbox.document.getElementById("c_f1").value = "  ";
-sandbox.addComment("f1");
-eq("blank comments are ignored", sandbox.soc("f1").comments.length, 2);
-sandbox.document.getElementById("c_f1").value = "Spot me next time";
-sandbox.addComment("f1");
-eq("a comment is stored", sandbox.soc("f1").comments.length, 3);
-eq("posted as you", sandbox.soc("f1").comments[2].who, "me");
+sandbox.document.getElementById("c_danny:f1").value = "  ";
+sandbox.addComment("danny:f1");
+eq("blank comments are ignored", sandbox.soc("danny:f1").comments.length, 2);
+sandbox.document.getElementById("c_danny:f1").value = "Spot me next time";
+sandbox.addComment("danny:f1");
+eq("a comment is stored", sandbox.soc("danny:f1").comments.length, 3);
+eq("posted as you", sandbox.soc("danny:f1").comments[2].who, "me");
 ok("and shows in the thread", viewHTML().indexOf("Spot me next time") >= 0);
-sandbox.toggleThread("f1");
+sandbox.toggleThread("danny:f1");
 ok("toggling closes it again", viewHTML().indexOf('class="thread"') < 0);
 ok("only one thread opens at a time",
-   (sandbox.toggleThread("f1"), sandbox.toggleThread("f3"), sandbox.openThread === "f3"));
-sandbox.toggleThread("f3");
+   (sandbox.toggleThread("danny:f1"), sandbox.toggleThread("sam:f3"), sandbox.openThread === "sam:f3"));
+sandbox.toggleThread("sam:f3");
 
 /* ---- 11. running someone else's workout ---- */
 group("Running someone else's workout");
-const tess = sandbox.FEED.filter(f => f.id === "f6")[0];
-sandbox.doWorkout("f6");
+const tess = CREWFEED.filter(f => f.id === "tess:f6")[0];
+sandbox.doWorkout("tess:f6");
 eq("no live workout means no prompt", sandbox.dlgOpen, false);
 eq("their split carries over", S().live.split, tess.split);
 eq("their movements carry over",
@@ -338,7 +446,7 @@ eq("their movements carry over",
    JSON.stringify(tess.ex.map(x => x.name)));
 ok("but none of their sets", S().live.ex.every(x => x.sets.length === 0));
 eq("the copy remembers whose it was", S().live.from.who, "tess");
-eq("and which session", S().live.from.src, "f6");
+eq("and which session", S().live.from.src, "tess:f6");
 ok("the live header names them", viewHTML().indexOf("Tess") >= 0);
 /* Leg Extension: Tess opened 15x70, Mark's own history opens 15x85 */
 const legExt = S().live.ex.filter(x => x.name === "Leg Extension")[0];
@@ -352,18 +460,18 @@ sandbox.document.getElementById("f0_0").value = 12;
 sandbox.document.getElementById("f0_1").value = 55;
 sandbox.addSet(0);
 sandbox.goHome(); sandbox.setHome("crew");
-sandbox.doWorkout("f1");
+sandbox.doWorkout("danny:f1");
 ok("swapping a live workout asks first", sandbox.dlgOpen === true);
 ok("the prompt counts what is at stake", els.dialog.innerHTML.indexOf("<b>1</b> set") >= 0);
 sandbox.closeDialog();
-eq("declining keeps your workout", S().live.from.src, "f6");
-sandbox.doWorkout("f1"); sandbox.dialogYes();
-eq("confirming swaps it", S().live.from.src, "f1");
+eq("declining keeps your workout", S().live.from.src, "tess:f6");
+sandbox.doWorkout("danny:f1"); sandbox.dialogYes();
+eq("confirming swaps it", S().live.from.src, "danny:f1");
 ok("and the old sets are gone", S().live.ex.every(x => x.sets.length === 0));
 
 /* lineage is only countable once the copy is shared */
 group("Lineage");
-eq("an unfinished copy counts for nothing", sandbox.repeats("f1"), 0);
+eq("an unfinished copy counts for nothing", sandbox.repeats("danny:f1"), 0);
 /* stay on the live session: the entry fields only exist while it is open */
 sandbox.resume();
 sandbox.document.getElementById("f0_0").value = 8;
@@ -371,10 +479,18 @@ sandbox.document.getElementById("f0_1").value = 185;
 sandbox.addSet(0);
 sandbox.finish();
 const copyId = S().sessions[S().sessions.length - 1].id;
-eq("finishing keeps the lineage", S().sessions[S().sessions.length - 1].from.src, "f1");
-eq("an unshared copy still counts for nothing", sandbox.repeats("f1"), 0);
+eq("finishing keeps the lineage", S().sessions[S().sessions.length - 1].from.src, "danny:f1");
+eq("an unshared copy still counts for nothing", sandbox.repeats("danny:f1"), 0);
 sandbox.openSession(copyId); sandbox.toggleShare();
-eq("sharing it makes it count", sandbox.repeats("f1"), 1);
+eq("sharing it alone still counts for nothing \u2014 the feed is the server's",
+   sandbox.repeats("danny:f1"), 0);
+
+/* the copy comes back down on the next sync, and only then is it countable */
+const copy = S().sessions.filter(x => x.id === copyId)[0];
+setFeed([{ id: "me:" + copyId, who: "me", name: "Mark Miller", initials: "MM",
+           mine: true, date: copy.date, split: copy.split, ex: copy.ex,
+           from: copy.from }].concat(CREWFEED));
+eq("once the server has it, it counts", sandbox.repeats("danny:f1"), 1);
 sandbox.goHome(); sandbox.setHome("crew");
 ok("the original says how far it travelled", viewHTML().indexOf("Done by 1 other") >= 0);
 ok("the copy credits the original", viewHTML().indexOf("Danny&rsquo;s Push day") >= 0);
