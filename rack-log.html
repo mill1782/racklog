@@ -182,6 +182,32 @@ button.card:active{transform:scale(.995)}
 .gatesub{color:var(--ink-2);font-size:13px;line-height:1.55;margin:16px 0 22px}
 .gate .msg{text-align:center}
 /* the signed-in person, where the Data button used to be */
+/* a screen reached from the calendar stacks its back button over the title */
+header .back+h1{margin-top:8px}
+/* the crew roster: everyone with an account, whether they have shared or not */
+.roster{border:1px solid var(--line);background:var(--surface);border-radius:12px;
+  padding:12px 14px;margin-bottom:12px}
+.rosterrow{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:9px}
+.rosterrow .who{gap:7px}
+.rosterrow .avatar{width:28px;height:28px;font-size:12px}
+.rosterrow .nm{font-size:16px}
+.rosternote{margin:11px 0 0;color:var(--ink-3);font-size:12.5px;line-height:1.55}
+.rosternote code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.exq{margin-bottom:12px}
+/* invites, on the profile screen */
+.invitenew{border:1px solid var(--accent);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.invitenew .fld{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.invlist{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.invrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--surface);padding:10px 12px}
+.invrow b{display:block;font-weight:600;font-size:13px}
+.invrow span{display:block;color:var(--ink-3);font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.invrow .act{flex:none;padding:6px 10px;border-radius:8px;background:var(--surface-2);
+  border:1px solid var(--line);font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--ink-2)}
 .userbtn{display:flex;align-items:center;padding:4px 0;margin:0}
 .userbtn .avatar{width:28px;height:28px;font-size:12px}
 .userbtn .nm{font-size:16px}
@@ -189,15 +215,6 @@ button.card:active{transform:scale(.995)}
 
 .datasec{margin-bottom:28px}
 .datasec p{margin:6px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.55}
-.blob{display:block;width:100%;box-sizing:border-box;height:120px;padding:10px;
-  background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);
-  border-radius:10px;font-family:"JetBrains Mono",ui-monospace,monospace;
-  font-size:11px;line-height:1.5;resize:vertical}
-.datarow{display:flex;gap:8px;margin-top:10px}
-.datarow>*{flex:1}
-.filebtn{display:flex;align-items:center;justify-content:center;text-align:center;
-  cursor:pointer}
-.filebtn input{display:none}
 .fld{display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:11px 12px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;
   font-family:"Barlow",sans-serif;font-size:16px}
@@ -417,12 +434,15 @@ var FEEDP={};              /* user id -> {id,name,person} , built from the feed 
    there are only three slots, and a hash happily drops a three-person family
    into the same colour. Sorted order is stable across devices because the feed
    is, and it guarantees distinct colours for the first three people. */
-function buildPeople(items,people){
+function buildPeople(items,people,crew){
   var names={}, ids=[];
   function add(id,name){
     if(SY.user&&id===SY.user.id) return;      /* you are never a crew colour */
     if(!names[id]){ names[id]=name||id; ids.push(id); }
   }
+  /* the roster first, so a colour is fixed by who is on the crew rather than
+     by who happens to have shared today */
+  if(crew) crew.forEach(function(c){ add(c.id,c.name); });
   items.forEach(function(x){ add(x.who,x.name); });
   /* the feed rows only name people who SHARED; `people` also covers someone
      who has only ever liked or commented, who would otherwise render as a
@@ -504,11 +524,32 @@ function save(){ saveLocal(); syncSoon(); }
    the last JSON we know the server has, per session id, and dirtyOps() diffs
    against it. That is why none of the fifteen mutation paths had to change:
    they all end in save(), and save() is enough. */
-var SY={since:0,shadow:{},user:null,google:false,feed:[]};
+var SY={since:0,shadow:{},user:null,google:false,feed:[],crew:[]};
 function saveSync(){ try{ localStorage.setItem(SKEYNOW,
   JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
 
 var API=null;              /* null = not checked, false = no server, true = server */
+/* An invite link is a real URL -- it gets texted to people -- so the code
+   arrives on location.pathname, not in a field somebody types. */
+var JOIN={code:"",state:"",from:null,error:""};
+var INV={list:null,fresh:null,msg:""};
+function joinCode(){
+  if(typeof location==="undefined") return "";
+  var m=String(location.pathname||"").match(/^\/join\/([a-f0-9]{32})$/);
+  return m?m[1]:"";
+}
+/* Checked before the form is drawn, so an expired link says so instead of
+   asking a stranger to choose a PIN and then refusing them. */
+function checkInvite(){
+  JOIN.code=joinCode();
+  if(!JOIN.code) return;
+  JOIN.state="checking";
+  apiFetch("/api/invite/"+JOIN.code).then(function(j){
+    JOIN.state="ok"; JOIN.from=j.from||null; render();
+  },function(e){
+    JOIN.state="bad"; JOIN.error=(e&&e.message)||"That invite link is not valid."; render();
+  });
+}
 var syncing=false, syncMsg="", syncTimer=null;
 
 /* key order is fixed here so a round trip never looks like a change and
@@ -539,7 +580,7 @@ function syncBoot(){
     API=true; SY.user=j.user||null; SY.google=!!j.google;
     loadStore(SY.user?SY.user.id:null);
     render();
-    if(SY.user) sync();
+    if(SY.user) sync(); else checkInvite();
   },solo);
 }
 function syncSoon(){
@@ -586,11 +627,12 @@ function sync(){
       if(changed) saveLocal();
       return apiFetch("/api/feed").then(function(f){
         SY.feed=f.items||[];
+        SY.crew=f.crew||[];
         /* The server owns engagement now. S.social is a cache of what it last
            said, kept only so the feed still draws while offline; it is
            replaced wholesale, never merged. */
         if(f.social) S.social=f.social;
-        FEEDP=buildPeople(SY.feed,f.people);
+        FEEDP=buildPeople(SY.feed,f.people,SY.crew);
         saveLocal();
         syncing=false;
         /* never re-render a session in progress: it would wipe the stepper
@@ -601,11 +643,11 @@ function sync(){
     },function(e){
       syncing=false; saveSync();
       if(e&&e.status===401){ SY.user=null; syncMsg="Signed out. Sign in again to sync."; }
-      else syncMsg="Offline. Your workouts are safe on this device.";
+      else syncMsg="Offline. Your workouts are safe on this device, and go up "+
+        "on their own when you are back.";
       if(view.name==="data") render();
     });
 }
-function syncNow(){ syncMsg="Syncing\u2026"; if(view.name==="data") render(); sync(); }
 function signIn(){
   var n=document.getElementById("loginname"), k=document.getElementById("loginpin");
   var name=n?String(n.value||"").trim():"", pin=k?String(k.value||"").trim():"";
@@ -640,7 +682,7 @@ function signOut(){
   var after=function(clean){
     var done=function(){
       if(clean&&uid) forget(uid);
-      SY.user=null; SY.feed=[]; FEEDP={}; SY.since=0; SY.shadow={};
+      SY.user=null; SY.feed=[]; SY.crew=[]; FEEDP={}; SY.since=0; SY.shadow={};
       syncMsg=clean?"":"Some changes hadn\u2019t uploaded yet, so they were kept on this device.";
       S=blank(); KEYNOW=storeKey(null); SKEYNOW=syncKey(null);
       openThread=null; view={name:"home"}; render();
@@ -764,11 +806,45 @@ function exSummary(k,sets){
 
 /* ---------- render ---------- */
 var V=document.getElementById("view"), BAR=document.getElementById("bar");
+/* Which screen you are looking at. Two renders that agree on this are the
+   same screen redrawn, not a navigation. */
+function viewKey(){
+  return [view.name,view.name2||view.id||"",S.tab,S.home,
+          API,SY.user?SY.user.id:""].join("|");
+}
+var lastKey=null;
+function scrollBox(){
+  return (typeof document!=="undefined"&&typeof document.querySelector==="function")
+    ? document.querySelector(".scroll") : null;
+}
+/* A render replaces the whole view, which drops the scroll box back to the
+   top. A background sync re-renders about a second after you open the Crew
+   tab, so the feed used to scroll itself back up while you were reading it.
+   Keep the offset when the screen has not changed; a real navigation still
+   starts at the top. */
 function render(){
-  /* Signed out on a server, nothing else renders: no calendar, no export, no
-     crew, no way to log a set into a store that belongs to somebody else. */
+  var key=viewKey(), box=scrollBox();
+  var top=(key===lastKey&&box)?box.scrollTop:0;
+  var act=(typeof document!=="undefined")?document.activeElement:null;
+  var focus=(act&&act.id==="exq")?{id:"exq",at:act.selectionStart}:null;
+  renderView();
+  lastKey=key;
+  if(top){ box=scrollBox(); if(box) box.scrollTop=top; }
+  if(focus){
+    var el=document.getElementById(focus.id);
+    if(el&&typeof el.focus==="function"){
+      el.focus();
+      try{ el.setSelectionRange(focus.at,focus.at); }catch(e){}
+    }
+  }
+}
+function renderView(){
+  /* Signed out on a server, nothing else renders: no calendar, no crew, no
+     way to log a set into a store that belongs to somebody else. */
   if(API===null) return renderSplash();
-  if(API===true&&!SY.user) return renderGate();
+  /* an invite link opens the join door instead of the sign-in door; somebody
+     already signed in just gets the app, the code being no use to them */
+  if(API===true&&!SY.user) return JOIN.code?renderJoin():renderGate();
   if(view.name==="home")renderHome();
   else if(view.name==="session")renderSession();
   else if(view.name==="data")renderData();
@@ -818,15 +894,39 @@ function calendar(){
    uses, with the person's disc where your own card carries the date. It is a
    div, not a button -- the whole session is already on the card, so there is
    nothing to open. */
+/* Who is in the crew, drawn above the feed. It answers the question an empty
+   feed cannot: nobody is missing, there is simply nobody else yet. The crew is
+   not a group you join -- it is every account on the server. Two ways in: an
+   invite link from the profile screen, or `worker/adduser.mjs` by hand. */
+function crewRoster(){
+  var crew=SY.crew||[];
+  if(!crew.length) return "";
+  var discs=crew.map(function(c){
+    var me=!!(SY.user&&c.id===SY.user.id);
+    var p=me?"me":((FEEDP[c.id]||{}).person||"p1");
+    return '<span class="who" data-person="'+p+'">'+
+      '<span class="avatar">'+esc(c.initials||initials(c.name))+'</span>'+
+      '<span class="nm">'+esc(firstName(c.name))+'</span>'+
+      (me?'<span class="you">You</span>':'')+'</span>';
+  }).join("");
+  return '<div class="roster"><div class="eyebrow">'+
+    (crew.length===1?'Your crew':'Your crew &middot; '+crew.length+' people')+
+    '</div><div class="rosterrow">'+discs+'</div>'+
+    (crew.length===1
+      ? '<p class="rosternote">It is just you so far. Everyone with an account '+
+        'on this server is in the crew. Invite somebody from your profile '+
+        '&mdash; the link works once and expires after 48 hours.</p>'
+      : '')+'</div>';
+}
 function crewHTML(){
-  var items=crewFeed();
+  var items=crewFeed(), top=crewRoster();
   if(!items.length){
     if(API===false) return '<div class="empty">The crew feed needs the server.<br>'+
       'This copy runs on its own.</div>';
-    return '<div class="empty">Nothing here yet.<br>'+
+    return top+'<div class="empty">Nothing here yet.<br>'+
       'Finish a workout and it shows up for the crew.</div>';
   }
-  return '<div class="list">'+items.map(function(s){
+  return top+'<div class="list">'+items.map(function(s){
     var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
     if(t.hasLift) parts.push(plural(t.sets,"set"),
       '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
@@ -897,18 +997,39 @@ function renderHome(){
         }).join("")+'</div></button>';}).join("")+'</div>'
     : '<div class="empty">Nothing logged in '+monthLabel(S.month)+'.</div>');
   } else {
-    var idx=Array.from(exerciseIndex().values()).sort(function(a,b){return b.last.localeCompare(a.last);});
-    body='<div class="list">'+idx.map(function(e){
-      var meta = isCardio(e.kind)
-        ? hhmm(e.mins)+' logged'
-        : 'best est. 1RM <span class="num">'+Math.round(e.top)+'</span> lb';
-      return '<button class="card" data-split="'+(isCardio(e.kind)?"cardio":e.split)+
-        '" onclick="openExercise(\''+jstr(e.name)+'\')">'+
-        '<div class="rowbetween"><h2>'+esc(e.name)+'</h2><span class="dot"></span></div>'+
-        '<div class="sessionmeta">'+ago(e.last)+' &middot; '+e.n+' session'+(e.n>1?'s':'')+
-        ' &middot; '+meta+'</div></button>';}).join("")+'</div>';
+    body='<input class="search exq" id="exq" placeholder="Search exercises" '+
+      'autocomplete="off" value="'+esc(exQuery)+'" oninput="filterExercises()">'+
+      '<div id="exlist">'+exerciseListHTML()+'</div>';
   }
   return renderHomeShell(body);
+}
+/* The list is built on its own so typing can redraw it WITHOUT a full render:
+   a render replaces the header too, and the search box would lose focus after
+   every keystroke. */
+var exQuery="";
+function exerciseListHTML(){
+  var q=exQuery.trim().toLowerCase();
+  var idx=Array.from(exerciseIndex().values())
+    .filter(function(e){ return !q || e.name.toLowerCase().indexOf(q)>=0; })
+    .sort(function(a,b){return b.last.localeCompare(a.last);});
+  if(!idx.length) return '<div class="empty">'+(q
+    ? 'Nothing logged matches &ldquo;'+esc(exQuery)+'&rdquo;.'
+    : 'No movements yet.<br>Finish a workout and they collect here.')+'</div>';
+  return '<div class="list">'+idx.map(function(e){
+    var meta = isCardio(e.kind)
+      ? hhmm(e.mins)+' logged'
+      : 'best est. 1RM <span class="num">'+Math.round(e.top)+'</span> lb';
+    return '<button class="card" data-split="'+(isCardio(e.kind)?"cardio":e.split)+
+      '" onclick="openExercise(\''+jstr(e.name)+'\')">'+
+      '<div class="rowbetween"><h2>'+esc(e.name)+'</h2><span class="dot"></span></div>'+
+      '<div class="sessionmeta">'+ago(e.last)+' &middot; '+e.n+' session'+(e.n>1?'s':'')+
+      ' &middot; '+meta+'</div></button>';}).join("")+'</div>';
+}
+function filterExercises(){
+  var i=document.getElementById("exq");
+  exQuery=i?String(i.value||""):"";
+  var l=document.getElementById("exlist");
+  if(l) l.innerHTML=exerciseListHTML();
 }
 /* Your own name and disc open the data screen. Signed out — which only
    happens with no server at all — it falls back to the old text button,
@@ -921,20 +1042,25 @@ function userChip(){
       esc(firstName(SY.user.name))+'</span></span></button>';
 }
 function renderHomeShell(body){
-  V.innerHTML='<header><div><div class="eyebrow">'+
-    (S.live?'Workout in progress':dstr(today(),true))+'</div><h1>'+
-    (S.tab==="history"?"Rack Log":"Exercises")+'</h1></div>'+
+  /* Exercises is a screen you go INTO, so it gets a back button rather than
+     the date, and the way home is the same one every other screen uses. */
+  var ex = S.tab==="exercises";
+  V.innerHTML='<header><div>'+
+    (ex?'<button class="back" onclick="setTab(\'history\')">&lsaquo; Rack Log</button>'
+       :'<div class="eyebrow">'+(S.live?'Workout in progress':dstr(today(),true))+'</div>')+
+    '<h1>'+(ex?"Exercises":"Rack Log")+'</h1></div>'+
     userChip()+'</header>'+scroll(body);
   BAR.innerHTML = homeBar(true);
 }
-/* the persistent nav — shown on home and on an exercise page, so the
-   calendar is always one tap away. A live workout replaces it with Resume. */
+/* the persistent nav — shown on home and on an exercise page. There is no
+   History button: the calendar is the landing screen, and every screen that
+   leaves it carries its own way back, so a nav button to it was a second
+   answer to a question already answered. A live workout replaces this with
+   Resume. */
 function homeBar(onHome){
   if(S.live) return '<button class="btn wide" onclick="resume()">Resume '+
     SPLIT_NAME[S.live.split]+' workout</button>';
-  return '<button class="tab" aria-current="'+(onHome&&S.tab==="history")+
-      '" onclick="setTab(\'history\')">History</button>'+
-    '<button class="btn" onclick="startWorkout()">+ Start workout</button>'+
+  return '<button class="btn wide" onclick="startWorkout()">+ Start workout</button>'+
     '<button class="tab" aria-current="'+(onHome&&S.tab==="exercises")+
       '" onclick="setTab(\'exercises\')">Exercises</button>';
 }
@@ -1077,15 +1203,6 @@ function renderExercise(){
   BAR.innerHTML=homeBar(false);
 }
 
-/* ---------- data: export and import ----------
-   The only way a workout gets off this device. localStorage is per-browser, so
-   without this a cleared cache or a new phone loses the lot. Copy/paste is the
-   primary path on purpose: a published artifact's sandbox makes a download the
-   page starts itself inert, so Download only works once this is self-hosted. */
-function exportText(){
-  return JSON.stringify({app:"racklog",version:2,exported:new Date().toISOString(),
-    sessions:S.sessions, social:S.social||{}},null,1);
-}
 function authSection(){
   if(API===false) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>This copy runs on its own \u2014 nothing syncs, and nothing leaves this device. '+
@@ -1095,7 +1212,7 @@ function authSection(){
   if(SY.user) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>Signed in as <b>'+esc(SY.user.name)+'</b>. '+
     (syncMsg?esc(syncMsg):'Your workouts follow you to every device you sign in on.')+'</p>'+
-    '<div class="datarow"><button class="btn ghost" onclick="syncNow()">Sync now</button>'+
+    '<div class="datarow">'+
     '<button class="btn ghost" onclick="askSignOut()">Sign out</button></div></div>';
   return '<div class="datasec"><div class="eyebrow">Sync</div>'+
     '<p>Sign in to keep these workouts on every device. Anything already logged '+
@@ -1121,97 +1238,140 @@ function gateShell(body){
   BAR.innerHTML="";
 }
 function renderSplash(){ gateShell('<p class="gatesub">Checking your sign-in…</p>'); }
+function renderJoin(){
+  if(JOIN.state!=="ok"&&JOIN.state!=="bad")
+    return gateShell('<p class="gatesub">Checking that invite\u2026</p>');
+  if(JOIN.state==="bad")
+    return gateShell('<p class="gatesub">'+esc(JOIN.error)+'</p>'+
+      '<div class="datarow"><a class="btn link" href="/">Go to sign in</a></div>');
+  gateShell('<p class="gatesub">'+
+    (JOIN.from?esc(firstName(JOIN.from))+'\u2019s invited you to the crew. '
+             :'You\u2019ve been invited to the crew. ')+
+    'Pick the name you want on your workouts, and a PIN to sign in with.</p>'+
+    (SY.google
+      ? '<a class="btn link" href="/api/auth/google/start?invite='+
+          encodeURIComponent(JOIN.code)+'">Continue with Google</a>'+
+        '<div class="orline">or</div>'
+      : '')+
+    '<input class="fld" id="joinname" placeholder="Name" autocomplete="name">'+
+    '<input class="fld" id="joinpin" type="password" inputmode="numeric" '+
+      'placeholder="PIN, 6 to 12 digits" autocomplete="new-password">'+
+    '<div class="datarow"><button class="btn" onclick="doJoin()">Join the crew</button></div>'+
+    '<div class="msg" id="joinmsg"></div>');
+}
+function doJoin(){
+  var n=document.getElementById("joinname"), k=document.getElementById("joinpin");
+  var name=n?String(n.value||"").trim():"", pin=k?String(k.value||"").trim():"";
+  if(!name) return msg("joinmsg","Enter the name you want on your workouts.",true);
+  /* six, not four: this URL is public and four digits is 10,000 guesses */
+  if(!/^\d{6,12}$/.test(pin)) return msg("joinmsg","Pick a PIN of 6 to 12 digits.",true);
+  msg("joinmsg","Joining\u2026",false);
+  apiFetch("/api/join",{method:"POST",body:JSON.stringify({code:JOIN.code,name:name,pin:pin})})
+    .then(function(j){
+      SY.user=j.user; JOIN.code=""; JOIN.state=""; syncMsg="";
+      loadStore(j.user.id); openThread=null; view={name:"home"};
+      /* take the code out of the address bar: it is spent, and it has no
+         business sitting in history or in a screenshot of the browser */
+      if(typeof history!=="undefined"&&history.replaceState)
+        try{ history.replaceState(null,"","/"); }catch(e){}
+      render(); sync();
+    },function(e){ msg("joinmsg",(e&&e.message)||"Couldn\u2019t join.",true); });
+}
 function renderGate(){
   gateShell('<p class="gatesub">Sign in to log a workout. Your history follows you '+
     'to every device you sign in on.</p>'+signInForm());
 }
-function renderData(){
-  var n=S.sessions.length;
-  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button>'+
-    '<h1 style="margin-top:8px">Your data</h1></div></header>'+
-    scroll(
-      authSection()+
-      '<div class="datasec"><div class="eyebrow">Export</div><p>'+
-        plural(n,"finished session")+' on this device. Keep a copy somewhere safe '+
-        '&mdash; clearing this browser&rsquo;s site data loses everything.</p>'+
-        '<textarea class="blob" id="exportblob" readonly>'+esc(exportText())+'</textarea>'+
-        '<div class="datarow"><button class="btn" onclick="copyExport()">Copy</button>'+
-        '<button class="btn ghost" onclick="downloadExport()">Download</button></div>'+
-        '<div class="msg" id="expmsg"></div></div>'+
-      '<div class="datasec"><div class="eyebrow">Import</div><p>Paste an export below, '+
-        'or choose a file. This <b>replaces</b> every workout on this device &mdash; '+
-        'export first.</p>'+
-        '<textarea class="blob" id="importblob" placeholder="Paste an export here"></textarea>'+
-        '<div class="datarow"><button class="btn" onclick="askImport()">Import</button>'+
-        '<label class="btn ghost filebtn">Choose file<input type="file" '+
-        'accept="application/json,.json" onchange="importFile(this)"></label></div>'+
-        '<div class="msg" id="impmsg"></div></div>');
-  BAR.innerHTML=homeBar(false);
+/* ---------- invites ----------
+   Anybody signed in can invite, and everybody can see every invite. That is
+   deliberate for a household: there is no admin role here, and an invite that
+   only one person could audit would be worse, not better. */
+function untilStr(ms){
+  var d=ms-Date.now();
+  if(d<=0) return "now";
+  var h=Math.floor(d/3600000);
+  return h>=1 ? "in "+plural(h,"hour") : "in "+plural(Math.max(1,Math.round(d/60000)),"minute");
 }
-function openData(){view={name:"data",from:view};render();}
-function msg(id,text,bad){var e=document.getElementById(id);
-  if(e){e.className="msg"+(bad?" bad":"");e.textContent=text;}}
-
-function copyExport(){
-  var t=document.getElementById("exportblob"), fallback=function(){
+function loadInvites(){
+  if(API!==true||!SY.user) return;
+  apiFetch("/api/invites").then(function(j){
+    INV.list=j.invites||[];
+    if(view.name==="data") render();
+  },function(){ INV.list=[]; if(view.name==="data") render(); });
+}
+function inviteFreshHTML(){
+  if(!INV.fresh) return "";
+  return '<div class="invitenew"><div class="eyebrow">Send this link</div>'+
+    '<input class="fld" id="invitelink" readonly value="'+esc(INV.fresh.url)+'">'+
+    '<div class="datarow"><button class="btn" onclick="copyInvite()">Copy link</button></div>'+
+    '<p class="rosternote">Expires '+esc(untilStr(INV.fresh.expires))+', and works '+
+      'once. This is the only time the link is shown \u2014 if you lose it, cancel '+
+      'it below and make another.</p>'+
+    '<div class="msg" id="invmsg"></div></div>';
+}
+function inviteRowsHTML(){
+  if(INV.list===null) return '<p class="rosternote">Loading\u2026</p>';
+  if(!INV.list.length) return '<p class="rosternote">No invites yet.</p>';
+  return '<div class="invlist">'+INV.list.map(function(i){
+    var label = i.state==="used"    ? "Joined"+(i.usedBy?" \u2014 "+esc(i.usedBy):"")
+              : i.state==="pending" ? "Waiting \u00b7 expires "+esc(untilStr(i.expires))
+              : i.state==="revoked" ? "Cancelled"
+              :                       "Expired";
+    return '<div class="invrow"><div><b>'+label+'</b><span>'+esc(i.id)+'</span></div>'+
+      (i.state==="pending"
+        ? '<button class="act" onclick="revokeInvite(\''+jstr(i.id)+'\')">Cancel</button>'
+        : '')+'</div>';}).join("")+'</div>';
+}
+function crewSection(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="datasec"><div class="eyebrow">Invite someone</div>'+
+    '<p>An invite link makes one account and expires after 48 hours. Whoever '+
+    'joins is in the crew &mdash; they see every shared workout, and there is no '+
+    'undoing that short of deleting their account.</p>'+
+    inviteFreshHTML()+
+    '<div class="datarow"><button class="btn ghost" onclick="newInvite()">'+
+      'Create an invite link</button></div>'+
+    (INV.msg?'<div class="msg bad">'+esc(INV.msg)+'</div>':'')+
+    inviteRowsHTML()+'</div>';
+}
+function newInvite(){
+  INV.msg=""; INV.fresh=null;
+  apiFetch("/api/invites",{method:"POST"}).then(function(j){
+    INV.fresh=j; loadInvites(); render();
+  },function(e){ INV.msg=(e&&e.message)||"Couldn\u2019t make an invite."; render(); });
+}
+function revokeInvite(id){
+  apiFetch("/api/invites/"+encodeURIComponent(id)+"/revoke",{method:"POST"})
+    .then(function(){
+      if(INV.fresh&&INV.fresh.id===id) INV.fresh=null;
+      loadInvites();
+    },function(e){ INV.msg=(e&&e.message)||"Couldn\u2019t cancel that."; render(); });
+}
+function copyInvite(){
+  var t=document.getElementById("invitelink");
+  if(!t) return;
+  var fallback=function(){
     try{ t.select(); t.setSelectionRange(0,999999);
-      msg("expmsg",document.execCommand("copy")?"Copied.":"Press Ctrl/Cmd-C to copy.",false);
-    }catch(e){ msg("expmsg","Select the text above and copy it.",true); }};
+      msg("invmsg",document.execCommand("copy")?"Copied.":"Press Ctrl/Cmd-C to copy.",false);
+    }catch(e){ msg("invmsg","Select the link above and copy it.",true); }};
   if(navigator.clipboard&&navigator.clipboard.writeText)
-    navigator.clipboard.writeText(t.value).then(function(){msg("expmsg","Copied.",false);},fallback);
+    navigator.clipboard.writeText(t.value).then(function(){msg("invmsg","Copied.",false);},fallback);
   else fallback();
 }
-function downloadExport(){
-  try{
-    var u=URL.createObjectURL(new Blob([exportText()],{type:"application/json"}));
-    var a=document.createElement("a");
-    a.href=u; a.download="rack-log-"+today()+".json";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(u);},1000);
-    msg("expmsg","Saved to your downloads. If nothing happened, use Copy instead.",false);
-  }catch(e){ msg("expmsg","Downloads are blocked here \u2014 use Copy instead.",true); }
+function renderData(){
+  var n=S.sessions.length, t=0;
+  S.sessions.forEach(function(x){ t+=totals(x).vol; });
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button>'+
+    '<h1>Profile</h1></div></header>'+
+    scroll(
+      '<div class="datasec"><div class="eyebrow">Logged</div><p>'+
+        plural(n,"finished session")+(t?', <span class="num">'+
+        Math.round(t).toLocaleString()+'</span> lb moved in total':'')+'.</p></div>'+
+      authSection()+crewSection());
+  BAR.innerHTML=homeBar(false);
 }
-function importFile(input){
-  var f=input.files&&input.files[0]; if(!f) return;
-  var r=new FileReader();
-  r.onload=function(){var b=document.getElementById("importblob");
-    if(b)b.value=r.result;
-    msg("impmsg","Loaded "+f.name+". Tap Import to apply it.",false);};
-  r.onerror=function(){msg("impmsg","Couldn\u2019t read that file.",true);};
-  r.readAsText(f);
-}
-/* structural checks only -- enough to refuse a wrong file without rejecting
-   fields a later version adds */
-function parseImport(txt){
-  var d,i,x;
-  if(!txt||!txt.trim()) return {err:"Paste an export first."};
-  try{ d=JSON.parse(txt); }catch(e){ return {err:"That isn\u2019t valid JSON."}; }
-  if(!d||!Array.isArray(d.sessions)) return {err:"No sessions in that export."};
-  for(i=0;i<d.sessions.length;i++){ x=d.sessions[i];
-    if(!x||typeof x.id!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||!Array.isArray(x.ex))
-      return {err:"Session "+(i+1)+" is missing its id, date or exercises."};
-  }
-  return {data:d};
-}
-function askImport(){
-  if(S.live) return msg("impmsg","Finish or cancel your workout first.",true);
-  var b=document.getElementById("importblob");
-  var r=parseImport(b?b.value:"");
-  if(r.err) return msg("impmsg",r.err,true);
-  msg("impmsg","",false);
-  confirmDialog("Import and replace?",
-    "This device has <b>"+plural(S.sessions.length,"session")+"</b>. Importing replaces "+
-    "them with <b>"+plural(r.data.sessions.length,"session")+"</b> from the export. "+
-    "There is no undo.",
-    "Replace","Keep mine",function(){ doImport(r.data); });
-}
-function doImport(d){
-  S.sessions=d.sessions;
-  S.social=(d.social&&typeof d.social==="object")?d.social:{};
-  S.month=S.sessions.length?ym(sorted()[0].date):today().slice(0,7);
-  S.tab="history"; S.home="mine"; view={name:"home"};
-  save(); render();
-}
+function openData(){view={name:"data",from:view};INV.msg="";render();loadInvites();}
+function msg(id,text,bad){var e=document.getElementById(id);
+  if(e){e.className="msg"+(bad?" bad":"");e.textContent=text;}}
 
 var CW=340,CH=152,CL=36,CR=18,CT=16,CB=26;
 function xlabel(d){return dstr(d).replace(/^[A-Za-z]+, /,"");}
@@ -1509,7 +1669,19 @@ function defaultDraft(kind){
 
 render();
 syncBoot();
+/* Two moments are worth a sync nobody asked for: coming back to the app, and
+   coming back onto the network. Everything else already syncs through save().
+   There is no Sync now button -- a button that does what the app does on a
+   1.2s timer is a button that exists to apologise for the app not doing it,
+   and on a phone the person who needs it most is the one least likely to go
+   looking for it.
+   Neither event is a guarantee: a captive portal fires `online` while nothing
+   can reach the worker. That is why the failure message says the workouts are
+   safe rather than promising a moment, and why the next save() retries
+   anyway. */
 if(typeof document.addEventListener==="function")
   document.addEventListener("visibilitychange",function(){
     if(!document.hidden) sync(); });
+if(typeof addEventListener==="function")
+  addEventListener("online",function(){ syncMsg=""; sync(); });
 </script>

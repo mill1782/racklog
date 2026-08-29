@@ -27,8 +27,26 @@ function mkEl() {
   return { innerHTML: "", value: "", focus() {}, addEventListener() {},
            onclick: null, classList: { add() {}, remove() {} }, scrollTo() {} };
 }
+/* The .scroll box, modelled the way a browser treats it: replacing the view's
+   innerHTML builds a NEW box, and a new box starts at the top. Without that
+   the stub would hold a scroll offset the real page had already thrown away,
+   and the "feed scrolls itself back up" bug would test as fixed while broken. */
+const scrollEl = { scrollTop: 0 };
+let viewHTML_ = "";
+els.view = mkEl();
+Object.defineProperty(els.view, "innerHTML", {
+  get: () => viewHTML_,
+  set: (v) => { viewHTML_ = String(v); scrollEl.scrollTop = 0; }
+});
+
+/* window-level listeners the app registers at boot. There is no Sync now
+   button any more, so the "online" handler IS the recovery path -- it has to
+   be tested, not assumed. */
+const winListeners = {};
+
 const sandbox = {
   console,
+  addEventListener: (ev, fn) => { (winListeners[ev] = winListeners[ev] || []).push(fn); },
   setTimeout: () => {},
   localStorage: {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
@@ -37,7 +55,9 @@ const sandbox = {
   },
   document: {
     getElementById: (id) => els[id] || (els[id] = mkEl()),
-    querySelector: () => null,
+    querySelector: (sel) =>
+      (sel === ".scroll" && viewHTML_.indexOf('class="scroll"') >= 0) ? scrollEl : null,
+    activeElement: null,
     addEventListener() {},
     body: { classList: { add() {}, remove() {} } }
   }
@@ -210,7 +230,8 @@ eq("leaving a session always lands on the calendar", screen(), "home/calendar");
 sandbox.S.live = null;
 sandbox.setTab("exercises"); sandbox.openExercise("Bench");
 eq("exercise detail", screen(), "exercise");
-ok("exercise page keeps the nav", barHTML().indexOf("setTab('history')") >= 0);
+ok("exercise page keeps the nav",
+   barHTML().indexOf("startWorkout()") >= 0 && barHTML().indexOf("setTab('exercises')") >= 0);
 sandbox.setTab("history");
 eq("nav reaches the calendar in one tap", screen(), "home/calendar");
 sandbox.openSession("s4"); sandbox.openExercise("Pec Fly"); sandbox.goBack();
@@ -361,7 +382,7 @@ eq("Crew keeps the calendar's home identity", screen(), "home/calendar");
 ok("the calendar is replaced, not stacked", viewHTML().indexOf("calgrid") < 0);
 ok("the switch is still reachable", viewHTML().indexOf("setHome('mine')") >= 0);
 ok("bottom nav is untouched by the feed",
-   barHTML().indexOf("setTab('history')") >= 0 && barHTML().indexOf("startWorkout()") >= 0);
+   barHTML().indexOf("setTab('exercises')") >= 0 && barHTML().indexOf("startWorkout()") >= 0);
 eq("every crew session the server sent renders", feedCount(), CREWFEED.length);
 ok("cards carry the full exercise list", viewHTML().indexOf("Barbell Bench Press") >= 0 &&
    viewHTML().indexOf("Romanian Deadlift") >= 0);
@@ -523,54 +544,25 @@ sandbox.render();
 ok("the calendar can't page into the future",
    viewHTML().indexOf('onclick="setMonth(1)" disabled') >= 0);
 
-/* ---- 10. export and import ---- */
-group("Export / import");
+/* ---- 10. the profile screen ---- */
+group("Profile");
 sandbox.openData();
-ok("the data screen renders", viewHTML().indexOf(">Your data</h1>") >= 0);
-ok("the calendar is still one tap away", barHTML().indexOf("setTab('history')") >= 0);
+ok("the screen is called Profile", viewHTML().indexOf(">Profile</h1>") >= 0);
+ok("not Your data any more", viewHTML().indexOf("Your data") < 0);
+ok("export is gone", viewHTML().indexOf("exportblob") < 0 &&
+   viewHTML().indexOf("downloadExport") < 0);
+ok("import is gone", viewHTML().indexOf("importblob") < 0 &&
+   viewHTML().indexOf("askImport") < 0);
+ok("it says what you have logged", viewHTML().indexOf("finished session") >= 0);
+ok("sync still lives here", viewHTML().indexOf("Sync") >= 0);
+ok("and there is a way back", viewHTML().indexOf('onclick="goBack()"') >= 0);
 
-const dump = sandbox.exportText();
-const parsed = JSON.parse(dump);
-eq("export carries every session", parsed.sessions.length, S().sessions.length);
-eq("export is stamped with a schema version", parsed.version, 2);
-ok("export is stamped with a time", typeof parsed.exported === "string");
-
-ok("an empty paste is refused", !!sandbox.parseImport("   ").err);
-ok("junk is refused", !!sandbox.parseImport("not json").err);
-ok("JSON with no sessions is refused", !!sandbox.parseImport('{"app":"racklog"}').err);
-ok("a session with a bad date is refused",
-   !!sandbox.parseImport('{"sessions":[{"id":"x","date":"nope","ex":[]}]}').err);
-ok("a session with no exercises array is refused",
-   !!sandbox.parseImport('{"sessions":[{"id":"x","date":"2026-07-04"}]}').err);
-ok("a real export is accepted", !sandbox.parseImport(dump).err);
-
-const hadSessions = S().sessions.length;
-sandbox.document.getElementById("importblob").value = dump;
-sandbox.askImport();
-ok("importing asks first", sandbox.dlgOpen === true);
-ok("the prompt names what is replaced",
-   els.dialog.innerHTML.indexOf("<b>" + hadSessions + " sessions</b>") >= 0);
-sandbox.closeDialog();
-eq("declining keeps your data", S().sessions.length, hadSessions);
-
-sandbox.askImport(); sandbox.dialogYes();
-eq("a round trip preserves every session", S().sessions.length, hadSessions);
-eq("import lands you back on the calendar", screen(), "home/calendar");
-
-sandbox.document.getElementById("importblob").value = JSON.stringify(
-  { sessions: [{ id: "imported", date: "2026-07-04", split: "pull", ex: [] }], social: {} });
-sandbox.openData(); sandbox.askImport(); sandbox.dialogYes();
-eq("import replaces rather than merges", S().sessions.length, 1);
-eq("and opens the imported month", S().month, "2026-07");
-
-/* importing over a running workout would silently drop it */
-sandbox.startWorkout();
-sandbox.openData();
-sandbox.document.getElementById("importblob").value = dump;
-sandbox.askImport();
-ok("importing mid-workout is refused", sandbox.dlgOpen === false);
-ok("and says why", String(els.impmsg.textContent).indexOf("Finish or cancel") >= 0);
-sandbox.askCancel(); sandbox.dialogYes();
+/* The import test used to leave exactly one session behind, and the sync
+   group below is written against that. Set it directly now that the only
+   thing that could replace your whole history is gone. */
+S().sessions = [{ id: "imported", date: "2026-07-04", split: "pull", ex: [] }];
+S().month = "2026-07";
+sandbox.goHome();
 
 /* ---- 11. sync ----
  * Against a fake server that mirrors worker/index.js: last-write-wins per
@@ -581,7 +573,33 @@ sandbox.askCancel(); sandbox.dialogYes();
 function fakeServer() {
   const api = {
     rows: new Map(), clock: 1000, puts: 0, dels: 0, unauthorized: false,
-    feed: [], social: {}, people: {}, posts: [],
+    feed: [], social: {}, people: {}, crew: [], posts: [],
+    /* invites. Codes here are 32 digits rather than 32 hex characters --
+       digits are hex, and it keeps them readable in a failure message. */
+    invites: [], joins: 0, codes: 0,
+    mkInvite(over) {
+      const n = ++api.codes;
+      const row = Object.assign(
+        { id: "i" + n, code: String(n).padStart(32, "0"), createdBy: "Mark Miller",
+          created: Date.now(), expires: Date.now() + 48 * 3600e3,
+          usedBy: null, revoked: 0 }, over || {});
+      api.invites.push(row);
+      return row;
+    },
+    /* the one place "is this link any good" is decided, mirroring redeem() */
+    inviteError(r) {
+      if (!r) return [404, "That invite link is not valid."];
+      if (r.usedBy) return [410, "That invite has already been used."];
+      if (r.revoked) return [410, "That invite was cancelled."];
+      if (r.expires < Date.now()) return [410, "That invite has expired. Ask for a new link."];
+      return null;
+    },
+    pub(r) {
+      const now = Date.now();
+      return { id: r.id, usedBy: r.usedBy, created: r.created, expires: r.expires,
+               state: r.usedBy ? "used" : r.revoked ? "revoked"
+                     : r.expires < now ? "expired" : "pending" };
+    },
     touch(id, row) { api.rows.set(id, Object.assign({ id }, row, { updated: ++api.clock })); },
     tomb(id) { api.rows.set(id, { id, deleted: 1, updated: ++api.clock }); },
     fetch(path, opts) {
@@ -595,8 +613,44 @@ function fakeServer() {
       else if (p === "/api/me") out = { user: { name: "Mark", initials: "M" } };
       else if (p === "/api/logout") out = { ok: true };
       else if (p === "/api/feed")
-        out = { now: ++api.clock, items: api.feed, social: api.social, people: api.people };
+        out = { now: ++api.clock, items: api.feed, social: api.social,
+                people: api.people, crew: api.crew };
       else if (p === "/api/social" && method === "POST") { api.posts.push(body); out = { ok: true }; }
+      else if (p.startsWith("/api/invite/")) {
+        const r = api.invites.find(i => i.code === p.slice("/api/invite/".length));
+        const bad = api.inviteError(r);
+        if (bad) { status = bad[0]; out = { error: bad[1] }; }
+        else out = { ok: true, from: r.createdBy, expires: r.expires };
+      }
+      else if (p === "/api/invites" && method === "GET")
+        out = { now: Date.now(), invites: api.invites.map(r => api.pub(r)) };
+      else if (p === "/api/invites" && method === "POST") {
+        const r = api.mkInvite();
+        out = { id: r.id, code: r.code, expires: r.expires, state: "pending",
+                url: "https://rack.example/join/" + r.code };
+      }
+      else if (method === "POST" && /^\/api\/invites\/[^/]+\/revoke$/.test(p)) {
+        const r = api.invites.find(i => i.id === p.split("/")[3]);
+        if (!r || r.usedBy) { status = 404; out = { error: "That invite is already used or gone." }; }
+        else { r.revoked = 1; out = { ok: true, id: r.id }; }
+      }
+      else if (p === "/api/join" && method === "POST") {
+        api.joins++;
+        const display = String((body && body.name) || "").trim();
+        const pin = String((body && body.pin) || "");
+        const r = api.invites.find(i => i.code === String((body && body.code) || ""));
+        const bad = api.inviteError(r);
+        if (!display || display.length > 40) {
+          status = 400; out = { error: "Enter the name you want on your workouts." };
+        } else if (!/^\d{6,12}$/.test(pin)) {
+          status = 400; out = { error: "Pick a PIN of 6 to 12 digits." };
+        } else if (bad) { status = bad[0]; out = { error: bad[1] }; }
+        else {
+          r.usedBy = display;
+          out = { name: display.toLowerCase(),
+                  user: { id: "u" + r.id, name: display, initials: "RM" } };
+        }
+      }
       else if (p === "/api/sessions" && method === "GET") {
         const since = Number(new URLSearchParams(qs || "").get("since") || 0);
         out = { now: ++api.clock,
@@ -633,8 +687,12 @@ function fakeServer() {
   sandbox.SY.since = 0;
   sandbox.SY.shadow = {};
 
-  ok("signed in, the data screen offers a sync",
-     sandbox.authSection().indexOf("Sync now") >= 0);
+  ok("signed in, the profile screen names you and offers a way out",
+     sandbox.authSection().indexOf("Signed in as") >= 0 &&
+     sandbox.authSection().indexOf("askSignOut()") >= 0);
+  ok("and there is no Sync now button to tap",
+     sandbox.authSection().indexOf("Sync now") < 0 &&
+     sandbox.authSection().indexOf("syncNow") < 0);
 
   const mine = S().sessions.length;
   eq("everything local starts out dirty", sandbox.dirtyOps().length, mine);
@@ -723,7 +781,8 @@ function fakeServer() {
   ok("and no way to start a workout", barHTML().indexOf("startWorkout()") < 0);
   sandbox.view = { name: "data" };
   sandbox.render();
-  ok("the door cannot be routed around", viewHTML().indexOf("exportblob") < 0);
+  ok("the door cannot be routed around",
+     viewHTML().indexOf(">Profile</h1>") < 0 && viewHTML().indexOf("askSignOut()") < 0);
   sandbox.SY.google = true;
   sandbox.render();
   ok("it offers Google when the server does",
@@ -876,6 +935,254 @@ function fakeServer() {
   ok("and it still opens the data screen", viewHTML().indexOf('onclick="openData()"') >= 0);
   ok("you are ink, never a split colour",
      viewHTML().indexOf('class="who" data-person="me"') >= 0);
+
+  /* ---- 18. no History button, and the way back ---- */
+  group("The way back");
+  S().live = null;
+  sandbox.goHome();
+  ok("the bottom nav has no History button", barHTML().indexOf("setTab('history')") < 0);
+  ok("it still starts a workout and reaches Exercises",
+     barHTML().indexOf("startWorkout()") >= 0 && barHTML().indexOf("setTab('exercises')") >= 0);
+  eq("home is still the calendar", screen(), "home/calendar");
+  ok("the landing screen needs no back button of its own",
+     viewHTML().indexOf("Rack Log</button>") < 0);
+  sandbox.setTab("exercises");
+  eq("Exercises is one tap away", screen(), "home/exercises");
+  ok("and carries its own way back to Rack Log",
+     viewHTML().indexOf("&lsaquo; Rack Log") >= 0 &&
+     viewHTML().indexOf("setTab('history')") >= 0);
+  sandbox.setTab("history");
+  eq("which lands on the calendar", screen(), "home/calendar");
+
+  /* ---- 19. searching your exercises ---- */
+  group("Searching your exercises");
+  /* A full render puts the list inside the view's HTML; typing rewrites only
+     the #exlist element. The stub cannot nest one in the other, so read
+     whichever one the last write went to. */
+  const exList = () =>
+    sandbox.document.getElementById("exlist").innerHTML || viewHTML();
+  const exCount = () => (exList().match(/onclick="openExercise\(/g) || []).length;
+  sandbox.exQuery = "";
+  sandbox.setTab("exercises");
+  const allEx = exCount();
+  ok("every logged movement is listed", allEx >= 1);
+  ok("there is a search box", viewHTML().indexOf('id="exq"') >= 0);
+
+  sandbox.document.getElementById("exq").value = "bench";
+  sandbox.filterExercises();
+  ok("searching narrows the list", exCount() >= 1 && exCount() <= allEx);
+  ok("and keeps the match", exList().indexOf("Bench") >= 0);
+
+  sandbox.document.getElementById("exq").value = "BENCH";
+  sandbox.filterExercises();
+  ok("search ignores case", exList().indexOf("Bench") >= 0);
+
+  sandbox.document.getElementById("exq").value = "zzzz";
+  sandbox.filterExercises();
+  eq("no match lists nothing", exCount(), 0);
+  ok("and it says so, naming what you typed", exList().indexOf("zzzz") >= 0);
+  /* the header must NOT be rebuilt on a keystroke, or the box loses focus */
+  ok("typing does not redraw the search box", viewHTML().indexOf('value="zzzz"') < 0);
+
+  sandbox.render();
+  ok("but a background redraw keeps what you typed",
+     viewHTML().indexOf('value="zzzz"') >= 0);
+  sandbox.document.getElementById("exq").value = "";
+  sandbox.filterExercises();
+  eq("clearing brings them all back", exCount(), allEx);
+  sandbox.setTab("history");
+
+  /* ---- 20. who is in the crew ---- */
+  group("Who is in the crew");
+  crew.feed = CREWFEED.slice();
+  crew.crew = [{ id: "me", name: "Mark Miller", initials: "MM", mine: true },
+               { id: "danny", name: "Danny Ruiz", initials: "DR" },
+               { id: "sam", name: "Sam Okonkwo", initials: "SO" },
+               { id: "tess", name: "Tess Lindqvist", initials: "TL" }];
+  await sandbox.sync();
+  sandbox.setHome("crew");
+  ok("the crew tab says who is in the crew", viewHTML().indexOf('class="roster"') >= 0);
+  ok("it counts them", viewHTML().indexOf("4 people") >= 0);
+  ok("somebody who has never shared is still on the roster",
+     viewHTML().indexOf(">Sam<") >= 0);
+  ok("and so is somebody who only ever commented", viewHTML().indexOf(">Tess<") >= 0);
+
+  /* alone on a server, an empty feed has to explain itself */
+  crew.feed = []; crew.social = {};
+  crew.crew = [{ id: "me", name: "Mark Miller", initials: "MM", mine: true }];
+  await sandbox.sync();
+  ok("alone, it says the crew is just you", viewHTML().indexOf("just you") >= 0);
+  ok("and how somebody gets added", viewHTML().indexOf("Invite somebody") >= 0);
+  ok("the roster shows even with nothing in the feed",
+     viewHTML().indexOf('class="roster"') >= 0 &&
+     viewHTML().indexOf("Nothing here yet") >= 0);
+
+  /* ---- 21. the feed stays where you left it ---- */
+  group("The feed stays where you left it");
+  crew.feed = CREWFEED.slice();
+  await sandbox.sync();
+  sandbox.setHome("crew");
+  eq("opening the feed starts at the top", scrollEl.scrollTop, 0);
+  scrollEl.scrollTop = 420;
+  await sandbox.sync();
+  eq("a background sync leaves it where you scrolled to", scrollEl.scrollTop, 420);
+  scrollEl.scrollTop = 300;
+  sandbox.toggleLike("danny:f1");
+  eq("so does tapping a like", scrollEl.scrollTop, 300);
+  sandbox.setHome("mine");
+  eq("but switching to Mine starts at the top", scrollEl.scrollTop, 0);
+  scrollEl.scrollTop = 180;
+  sandbox.render();
+  eq("a plain redraw of the same screen keeps the offset", scrollEl.scrollTop, 180);
+  sandbox.openData();
+  eq("and opening another screen starts at the top", scrollEl.scrollTop, 0);
+  sandbox.goBack();
+
+  /* ---- 22. coming back online ---- */
+  group("Coming back online");
+  const back = fakeServer();
+  sandbox.fetch = (p, o) => back.fetch(p, o);
+  sandbox.API = true;
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM" };
+  sandbox.loadStore("me");
+  sandbox.SY.since = 0; sandbox.SY.shadow = {};
+  S().sessions.push({ id: "offline1", date: "2026-08-06", split: "push", ex: [] });
+  sandbox.saveLocal();
+
+  const online = (winListeners.online || [])[0];
+  ok("the app listens for the network coming back", typeof online === "function");
+  eq("and only registers that once", (winListeners.online || []).length, 1);
+
+  sandbox.syncMsg = "Offline. Your workouts are safe on this device.";
+  online();
+  ok("coming back online starts a sync with nothing tapped", sandbox.syncing === true);
+  eq("and takes the offline message down as it goes", sandbox.syncMsg, "");
+  for (let i = 0; i < 100 && sandbox.syncing; i++) await new Promise((r) => setTimeout(r, 0));
+  ok("what was logged offline reaches the server", back.rows.has("offline1"));
+  eq("and nothing is left waiting", sandbox.dirtyOps().length, 0);
+
+  /* ---- 23. joining by an invite link ----
+   * The code arrives on the URL, because the link gets texted to somebody.
+   * Everything here is the door BEFORE there is an account, which is the one
+   * screen a stranger sees -- so it has to be right without a second try.
+   */
+  group("Joining by an invite link");
+  const inv = fakeServer();
+  sandbox.fetch = (p, o) => inv.fetch(p, o);
+  sandbox.API = true;
+  sandbox.SY.user = null;
+  sandbox.SY.google = false;
+  let replaced = 0;
+  sandbox.history = { replaceState() { replaced++; } };
+  /* a real timer turn, which drains every pending promise the fetch made */
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const open = async (code) => {
+    sandbox.location = { pathname: code ? "/join/" + code : "/" };
+    sandbox.JOIN = { code: "", state: "", from: null, error: "" };
+    sandbox.checkInvite();
+    await settle();
+    sandbox.render();
+  };
+
+  sandbox.location = { pathname: "/join/not-a-code" };
+  eq("a path that only looks like an invite is not one", sandbox.joinCode(), "");
+  sandbox.location = { pathname: "/" };
+  eq("and the ordinary address carries no code", sandbox.joinCode(), "");
+
+  const good = inv.mkInvite();
+  await open(good.code);
+  ok("an invite link opens the join door, not the sign-in door",
+     viewHTML().indexOf('id="joinpin"') >= 0 && viewHTML().indexOf('id="loginpin"') < 0);
+  ok("it says who invited you", viewHTML().indexOf("Mark\u2019s invited you") >= 0);
+  ok("and asks for a name to put on your workouts",
+     viewHTML().indexOf('id="joinname"') >= 0);
+
+  /* the three dead links, each said plainly instead of a shrug */
+  await open(inv.mkInvite({ expires: Date.now() - 1000 }).code);
+  ok("an expired link says so before asking anybody to pick a PIN",
+     viewHTML().indexOf("expired") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
+  await open(inv.mkInvite({ usedBy: "Somebody Else" }).code);
+  ok("a spent link says it is spent", viewHTML().indexOf("already been used") >= 0);
+  await open("0000000000000000000000000000ffff");
+  ok("a code nobody ever issued is refused",
+     viewHTML().indexOf("not valid") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
+  ok("and every dead end still offers the sign-in door",
+     viewHTML().indexOf('href="/"') >= 0);
+
+  /* the PIN rule is six digits, not four: this URL is public */
+  await open(good.code);
+  sandbox.document.getElementById("joinname").value = "Robin Miller";
+  sandbox.document.getElementById("joinpin").value = "1234";
+  const tries = inv.joins;
+  sandbox.doJoin();
+  eq("a four-digit PIN never reaches the server", inv.joins, tries);
+  ok("and it says what is wanted instead",
+     sandbox.document.getElementById("joinmsg").textContent.indexOf("6 to 12 digits") >= 0);
+  sandbox.document.getElementById("joinname").value = "";
+  sandbox.document.getElementById("joinpin").value = "778899";
+  sandbox.doJoin();
+  eq("neither does a blank name", inv.joins, tries);
+
+  sandbox.document.getElementById("joinname").value = "Robin Miller";
+  sandbox.doJoin();
+  await settle();
+  ok("joining signs you in", sandbox.SY.user && sandbox.SY.user.name === "Robin Miller");
+  eq("the invite is spent by it", inv.invites.find(i => i.id === good.id).usedBy,
+     "Robin Miller");
+  eq("the code is taken out of the address bar", replaced, 1);
+  eq("and the join screen is done with", sandbox.JOIN.code, "");
+  sandbox.render();
+  eq("you land on the calendar", screen(), "home/calendar");
+  eq("with no workouts to your name yet", S().sessions.length, 0);
+
+  sandbox.SY.user = null;
+  sandbox.SY.google = true;
+  const viaGoogle = inv.mkInvite();
+  await open(viaGoogle.code);
+  ok("the Google door carries the invite with it, or it would sign nobody up",
+     viewHTML().indexOf("/api/auth/google/start?invite=" + viaGoogle.code) >= 0);
+  sandbox.SY.google = false;
+
+  /* ---- 24. handing one out ---- */
+  group("Handing out an invite");
+  sandbox.SY.user = { id: "me", name: "Mark Miller", initials: "MM" };
+  sandbox.JOIN = { code: "", state: "", from: null, error: "" };
+  sandbox.location = { pathname: "/" };
+  sandbox.loadStore("me");
+  sandbox.openData();
+  await settle();
+  ok("the profile screen offers a way to invite somebody",
+     viewHTML().indexOf("newInvite()") >= 0);
+  ok("and is honest about what an invite buys",
+     viewHTML().indexOf("every shared workout") >= 0);
+  ok("an invite somebody took is listed under their name",
+     viewHTML().indexOf("Joined") >= 0 && viewHTML().indexOf("Robin Miller") >= 0);
+  ok("a spent invite cannot be cancelled",
+     viewHTML().indexOf("revokeInvite(&#39;" + good.id) < 0 &&
+     viewHTML().indexOf("revokeInvite('" + good.id) < 0);
+
+  sandbox.newInvite();
+  await settle();
+  const link = sandbox.INV.fresh;
+  ok("a new link is shown once, in full",
+     viewHTML().indexOf('id="invitelink"') >= 0 && viewHTML().indexOf(link.url) >= 0);
+  ok("with when it dies and that it works once",
+     /Expires in \d+ hours?, and works once/.test(viewHTML()));
+  ok("a waiting invite can be cancelled", viewHTML().indexOf("Waiting") >= 0 &&
+     viewHTML().indexOf("revokeInvite(") >= 0);
+
+  sandbox.revokeInvite(link.id);
+  await settle();
+  eq("cancelling takes it out of use", inv.invites.find(i => i.id === link.id).revoked, 1);
+  ok("the row says so", viewHTML().indexOf("Cancelled") >= 0);
+  ok("and the link stops being shown", viewHTML().indexOf(link.url) < 0);
+  ok("no code is ever printed on the list itself",
+     viewHTML().indexOf(good.code) < 0 && viewHTML().indexOf(link.code) < 0);
+
+  sandbox.SY.user = null;
+  await open(link.code);
+  ok("and the cancelled link is a dead end for whoever has it",
+     viewHTML().indexOf("cancelled") >= 0 && viewHTML().indexOf('id="joinpin"') < 0);
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

@@ -14,6 +14,12 @@ import ICON192 from "./icon-192.png";
 import ICON512 from "./icon-512.png";
 
 const COOKIE = "rl";
+/* 48 hours, Mark's call. Long enough to survive a family text going unread
+   overnight, short enough that a code screenshotted into a group chat stops
+   being a way in by the weekend. */
+const INVITE_MS = 48 * 60 * 60 * 1000;
+const MAX_PENDING = 10;          /* unredeemed, unexpired invites at once */
+const INVITE_COOKIE = "rlinvite";
 const SESSION_MS = 90 * 86400 * 1000;
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
@@ -25,6 +31,7 @@ const OAUTH_STATE = "rlstate";
 const OAUTH_STATE_S = 600;
 /* the nonce is single-use: the callback burns it whichever way it ends */
 const CLEAR_STATE = `${OAUTH_STATE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=0`;
+const CLEAR_INVITE = `${INVITE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=0`;
 
 /* Why this number is low, deliberately.
  *
@@ -238,6 +245,18 @@ function b64urlJSON(seg) {
 function googleStart(req, env, url) {
   if (!googleOn(env)) return oauthFail("Google sign-in is not set up on this server.");
   const state = hex(crypto.getRandomValues(new Uint8Array(16)));
+  /* An invite has to survive the round trip to Google, and it cannot ride in
+     the redirect URI (Google only returns the one registered) or in `state`
+     (which is compared against the cookie). So it gets its own short-lived
+     cookie, scoped to /api/auth/ like the nonce, and is only READ on the way
+     back -- validity is decided then, not now. */
+  const inv = url.searchParams.get("invite") || "";
+  const cookies = [
+    `${OAUTH_STATE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=${OAUTH_STATE_S}`
+  ];
+  cookies.push(/^[a-f0-9]{32}$/.test(inv)
+    ? `${INVITE_COOKIE}=${inv}; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=${OAUTH_STATE_S}`
+    : CLEAR_INVITE);
   const q = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: redirectURI(url),
@@ -248,18 +267,16 @@ function googleStart(req, env, url) {
        signed in last and there is no way to switch */
     prompt: "select_account"
   });
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: "https://accounts.google.com/o/oauth2/v2/auth?" + q,
-      /* SameSite=Lax, NOT Strict. Strict withholds the cookie on the top-level
-         redirect back from Google, so every sign-in would fail the state check
-         with nothing in the logs to explain it. Lax sends it on that
-         navigation, which is exactly and only what is needed. */
-      "set-cookie": `${OAUTH_STATE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/api/auth/; Max-Age=${OAUTH_STATE_S}`,
-      "cache-control": "no-store"
-    }
+  /* SameSite=Lax, NOT Strict. Strict withholds these on the top-level redirect
+     back from Google, so every sign-in would fail the state check with nothing
+     in the logs to explain it. Lax sends them on that navigation, which is
+     exactly and only what is needed. */
+  const h = new Headers({
+    location: "https://accounts.google.com/o/oauth2/v2/auth?" + q,
+    "cache-control": "no-store"
   });
+  for (const c of cookies) h.append("set-cookie", c);
+  return new Response(null, { status: 302, headers: h });
 }
 
 async function googleCallback(req, env, url) {
@@ -278,7 +295,7 @@ async function googleCallback(req, env, url) {
      Only these two: a cancelled sign-in and an account that is not on the
      list are real answers that must still be shown. */
   const replay = async (text) =>
-    (await currentUser(req, env)) ? homeRedirect([CLEAR_STATE]) : oauthFail(text);
+    (await currentUser(req, env)) ? homeRedirect([CLEAR_STATE, CLEAR_INVITE]) : oauthFail(text);
 
   const code = url.searchParams.get("code") || "";
   const state = url.searchParams.get("state") || "";
@@ -325,15 +342,206 @@ async function googleCallback(req, env, url) {
   let u = await env.DB.prepare("SELECT * FROM users WHERE google_sub = ?").bind(sub).first();
   if (!u) {
     u = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
-    /* the allowlist IS the account table. Anyone on earth has a Google account,
-       so without this the app is open to the internet. */
-    if (!u) return oauthFail("That Google account is not on the list for this app.");
+    if (!u) {
+      /* No account matches. This is the ONLY way a Google sign-in creates one,
+         and it needs an invite that is still good -- otherwise the app is open
+         to everyone on earth with a Google account, which is everyone. */
+      const im = (req.headers.get("Cookie") || "")
+        .match(/(?:^|;\s*)rlinvite=([a-f0-9]{32})(?:;|$)/);
+      if (!im) return oauthFail("That Google account is not on the list for this app.");
+      const r = await redeem(env, im[1]);
+      if (r.err) {
+        const j = await r.err.json();
+        return oauthFail(j.error || "That invite is no longer valid.");
+      }
+      const display = String(c.name || email.split("@")[0]).trim().slice(0, 40) || "Member";
+      u = await makeUser(env, { display, name: await freeName(env, display), email, sub });
+      if (!await claim(env, r.row.id, u.id)) {
+        await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(u.id).run();
+        return oauthFail("That invite has already been used.");
+      }
+      return homeRedirect([await mintCookie(env, u), CLEAR_STATE, CLEAR_INVITE]);
+    }
+    /* the allowlist IS the account table: an email put there by adduser.mjs
+       binds to a Google `sub` on the first sign-in */
     await env.DB.prepare("UPDATE users SET google_sub = ? WHERE id = ?").bind(sub, u.id).run();
   }
 
   /* the state cookie goes out with the same response that spends it, so a
      replay fails the check above rather than reaching Google a second time */
-  return homeRedirect([await mintCookie(env, u), CLEAR_STATE]);
+  return homeRedirect([await mintCookie(env, u), CLEAR_STATE, CLEAR_INVITE]);
+}
+
+/* ---------- invites ----------
+   An invite is a bearer credential that buys exactly one account. It is the
+   only way to self-register, and everything below exists to keep "exactly
+   one" true: the code is single-use, expiring, revocable, and redeemed
+   through a single funnel (`redeem`) that both doors call.
+
+   Note what an invite is NOT: it is not a per-person permission. This server
+   is one household and the crew is the users table, so admitting somebody
+   admits them to every shared workout on it. There is no demoting them
+   afterwards short of deleting the row. */
+
+function inviteLink(url, code) { return url.origin + "/join/" + code; }
+
+/* what the profile screen may see: never the code, which is gone the moment
+   it is shown once at creation */
+function publicInvite(r, now) {
+  const state = r.used ? "used"
+    : r.revoked ? "revoked"
+    : r.expires < now ? "expired"
+    : "pending";
+  return { id: r.id, state, created: r.created, expires: r.expires,
+           usedBy: r.used_by || null };
+}
+
+async function invitesList(env, url) {
+  const now = Date.now();
+  const rs = await env.DB.prepare(
+    "SELECT i.*, u.display AS used_display FROM invites i " +
+    "LEFT JOIN users u ON u.id = i.used_by ORDER BY i.created DESC LIMIT 50"
+  ).all();
+  const invites = (rs.results || []).map((r) => {
+    const v = publicInvite(r, now);
+    v.usedBy = r.used_display || null;
+    return v;
+  });
+  return json({ now, invites });
+}
+
+async function inviteCreate(env, user, url) {
+  const now = Date.now();
+  /* housekeeping first, so a pile of expired codes cannot block a real one */
+  await env.DB.prepare(
+    "DELETE FROM invites WHERE used_by IS NULL AND expires < ?"
+  ).bind(now - INVITE_MS).run();
+
+  const open = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM invites WHERE used_by IS NULL AND revoked = 0 AND expires > ?"
+  ).bind(now).first();
+  if (open && open.n >= MAX_PENDING)
+    return json({ error: "There are already " + MAX_PENDING + " invites waiting. " +
+                         "Revoke one before making another." }, 429);
+
+  const code = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const id = hex(crypto.getRandomValues(new Uint8Array(6)));
+  const expires = now + INVITE_MS;
+  await env.DB.prepare(
+    "INSERT INTO invites (id, code_hash, created_by, created, expires) VALUES (?, ?, ?, ?, ?)"
+  ).bind(id, await sha256(code), user.id, now, expires).run();
+
+  /* the only time the code is ever returned. It is not stored in the clear,
+     so losing this link means making another one. */
+  return json({ id, code, url: inviteLink(url, code), expires, state: "pending" });
+}
+
+async function inviteRevoke(env, id) {
+  if (!/^[a-f0-9]{12}$/.test(id)) return json({ error: "Bad invite." }, 400);
+  const r = await env.DB.prepare(
+    "UPDATE invites SET revoked = 1 WHERE id = ? AND used_by IS NULL"
+  ).bind(id).run();
+  const changed = r && r.meta ? r.meta.changes : 0;
+  if (!changed) return json({ error: "That invite is already used or gone." }, 404);
+  return json({ ok: true, id });
+}
+
+/* Look a code up without spending it -- the join screen calls this so it can
+   say "expired" before asking somebody to pick a PIN. */
+async function inviteCheck(env, code) {
+  if (!/^[a-f0-9]{32}$/.test(code)) return json({ error: "That invite link is not valid." }, 404);
+  const row = await env.DB.prepare(
+    "SELECT i.*, u.display AS from_display FROM invites i " +
+    "LEFT JOIN users u ON u.id = i.created_by WHERE i.code_hash = ?"
+  ).bind(await sha256(code)).first();
+  if (!row) return json({ error: "That invite link is not valid." }, 404);
+  if (row.used_by) return json({ error: "That invite has already been used." }, 410);
+  if (row.revoked) return json({ error: "That invite was cancelled." }, 410);
+  if (row.expires < Date.now())
+    return json({ error: "That invite has expired. Ask for a new link." }, 410);
+  return json({ ok: true, from: row.from_display || null, expires: row.expires });
+}
+
+/* The single funnel. Returns the invite row or an error Response; both doors
+   call it, so "single-use" is enforced in exactly one place. */
+async function redeem(env, code) {
+  if (!/^[a-f0-9]{32}$/.test(code)) return { err: json({ error: "That invite link is not valid." }, 404) };
+  const row = await env.DB.prepare("SELECT * FROM invites WHERE code_hash = ?")
+    .bind(await sha256(code)).first();
+  if (!row) return { err: json({ error: "That invite link is not valid." }, 404) };
+  if (row.used_by) return { err: json({ error: "That invite has already been used." }, 410) };
+  if (row.revoked) return { err: json({ error: "That invite was cancelled." }, 410) };
+  if (row.expires < Date.now())
+    return { err: json({ error: "That invite has expired. Ask for a new link." }, 410) };
+  return { row };
+}
+
+/* Claiming the invite is a conditional UPDATE, not a read-then-write: two
+   people opening the same link at the same moment must not both get in.
+   `used_by IS NULL` in the WHERE is what makes the second one lose. */
+async function claim(env, id, userId) {
+  const r = await env.DB.prepare(
+    "UPDATE invites SET used_by = ?, used = ? WHERE id = ? AND used_by IS NULL AND revoked = 0"
+  ).bind(userId, Date.now(), id).run();
+  return !!(r && r.meta && r.meta.changes);
+}
+
+function initialsOf(display) {
+  return display.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+/* `users.name` is UNIQUE and it is what you type at the PIN door, so a second
+   Nate cannot simply be Nate. */
+async function freeName(env, base) {
+  const want = base.toLowerCase();
+  for (let i = 0; i < 50; i++) {
+    const n = i ? want + (i + 1) : want;
+    const hit = await env.DB.prepare("SELECT id FROM users WHERE name = ?").bind(n).first();
+    if (!hit) return n;
+  }
+  return want + "-" + hex(crypto.getRandomValues(new Uint8Array(3)));
+}
+
+async function makeUser(env, { display, name, pin, email, sub }) {
+  const id = hex(crypto.getRandomValues(new Uint8Array(8)));
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  /* Every account needs a pin_hash because the column is NOT NULL. Someone who
+     joined with Google gets a random one nobody knows, which is not a way in:
+     it is 32 bytes of entropy and the PIN door only accepts 4-12 digits. */
+  const secret = pin || hex(crypto.getRandomValues(new Uint8Array(32)));
+  await env.DB.prepare(
+    "INSERT INTO users (id, name, display, initials, pin_hash, pin_salt, email, google_sub, created) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(id, name, display, initialsOf(display), await derive(secret, salt), salt,
+         email || null, sub || null, Date.now()).run();
+  return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first();
+}
+
+/* Joining with a name and a PIN. The Google half of this lives in
+   googleCallback, because it has to survive the round trip to Google. */
+async function join(req, env, url) {
+  const b = await readJSON(req);
+  const code = String((b && b.code) || "");
+  const display = String((b && b.name) || "").trim().replace(/\s+/g, " ");
+  const pin = String((b && b.pin) || "");
+
+  if (!display || display.length > 40)
+    return json({ error: "Enter the name you want on your workouts." }, 400);
+  /* six, not four: this URL is public, and four digits is 10,000 guesses */
+  if (!/^\d{6,12}$/.test(pin))
+    return json({ error: "Pick a PIN of 6 to 12 digits." }, 400);
+
+  const r = await redeem(env, code);
+  if (r.err) return r.err;
+
+  const name = await freeName(env, display);
+  const u = await makeUser(env, { display, name, pin });
+  if (!await claim(env, r.row.id, u.id)) {
+    /* somebody else got there in the millisecond between redeem and claim */
+    await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(u.id).run();
+    return json({ error: "That invite has already been used." }, 410);
+  }
+  return json({ user: publicUser(u), name }, 200, { "set-cookie": await mintCookie(env, u) });
 }
 
 /* ---------- sync ---------- */
@@ -421,19 +629,28 @@ async function feed(env, user) {
     need.add(r.user_id);
   }
 
+  /* The crew is not a group you join -- it is simply every account on this
+     server, because `worker/adduser.mjs` is the only way one is made and it
+     is run by hand. So the roster is the whole users table, and it is sent
+     whole: somebody who has never shared a workout is still on the crew, and
+     the page has to be able to say so rather than showing an empty screen
+     with no explanation of who is missing. */
+  const cr = await env.DB.prepare(
+    "SELECT id, display, initials FROM users ORDER BY created LIMIT 100"
+  ).all();
+  const crew = (cr.results || []).map((r) => ({
+    id: r.id, name: r.display, initials: r.initials, mine: r.id === user.id
+  }));
+
   /* Names for everyone the page will have to draw a disc for. The feed rows
      only name people who SHARED; someone who has only ever commented would
-     otherwise render as a raw row id. */
-  const ids = [...need];
+     otherwise render as a raw row id. The roster covers all of them, so this
+     is now a straight copy rather than a second query. */
   const people = {};
-  if (ids.length) {
-    const us = await env.DB.prepare(
-      "SELECT id, display, initials FROM users WHERE id IN (" + ids.map(() => "?").join(",") + ")"
-    ).bind(...ids).all();
-    for (const u of (us.results || [])) people[u.id] = { name: u.display, initials: u.initials };
-  }
+  for (const c of crew) people[c.id] = { name: c.name, initials: c.initials };
+  for (const id of need) if (!people[id]) people[id] = { name: id, initials: "?" };
 
-  return json({ now: Date.now(), items, social, people });
+  return json({ now: Date.now(), items, social, people, crew });
 }
 
 /* One like or one comment. The only write in the app that lands on somebody
@@ -502,6 +719,11 @@ async function api(req, env, url) {
   }
 
   if (path === "login" && method === "POST") return login(req, env);
+  if (path === "join" && method === "POST") return join(req, env, url);
+  /* public on purpose: the join screen has to be able to say "expired" before
+     asking a stranger to choose a PIN */
+  if (path.startsWith("invite/") && method === "GET")
+    return inviteCheck(env, decodeURIComponent(path.slice(7)));
   if (path === "auth/google/start" && method === "GET") return googleStart(req, env, url);
   if (path === "auth/google/callback" && method === "GET") return googleCallback(req, env, url);
 
@@ -520,6 +742,11 @@ async function api(req, env, url) {
   }
 
   if (!user) return json({ error: "Signed out." }, 401);
+
+  if (path === "invites" && method === "GET") return invitesList(env, url);
+  if (path === "invites" && method === "POST") return inviteCreate(env, user, url);
+  if (path.startsWith("invites/") && path.endsWith("/revoke") && method === "POST")
+    return inviteRevoke(env, path.slice(8, -7));
 
   if (path === "sessions" && method === "GET") return pull(env, user, url);
   if (path === "feed" && method === "GET") return feed(env, user);
@@ -561,7 +788,9 @@ export default {
 
     /* no-cache, not no-store: the browser may keep it, but must revalidate, so
        a deploy reaches everyone's home-screen app on the next launch */
-    if (p === "/" || p === "/index.html")
+    /* /join/<code> serves the same single page; the app reads the code off
+       location.pathname. It is a real URL because it gets texted to people. */
+    if (p === "/" || p === "/index.html" || /^\/join\/[a-f0-9]{32}$/.test(p))
       return asset(PAGE, "text/html; charset=utf-8", "no-cache");
 
     return new Response("Not found", { status: 404 });
