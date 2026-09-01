@@ -384,6 +384,16 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
   display:block;margin-bottom:1px}
 .monthsessions{margin-top:10px}
 .loghead{margin:18px 0 10px;font-size:19px;text-transform:uppercase;letter-spacing:.04em}
+.logmonth{margin-bottom:12px}
+.logmonthtoggle{width:100%;display:flex;align-items:center;justify-content:space-between;
+  min-height:44px;padding:8px 2px;border-bottom:1px solid var(--line);text-align:left}
+.logmonthtoggle .label{font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  font-size:17px;text-transform:uppercase;letter-spacing:.04em}
+.logmonthtoggle .meta{display:flex;align-items:center;gap:9px;color:var(--ink-3);
+  font-family:"JetBrains Mono",monospace;font-size:11px}
+.logmonthtoggle .chev{font-family:"Barlow",sans-serif;font-size:10px;transition:transform .15s}
+.logmonthtoggle[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.logmonth .list{margin-top:9px}
 .monthpickerhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .monthpickerhead h2{font-size:22px}
 .monthpickerhead button{width:38px;height:38px;border-radius:8px;background:var(--surface-2);
@@ -1061,13 +1071,32 @@ function sessionCard(s){
       return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+exSummary(kindOf(x),x.sets)+
         '</span></div>';}).join("")+'</div></button>';
 }
+var collapsedLogMonths={};
+function workoutLog(){
+  var groups={}, order=[];
+  sorted().forEach(function(s){
+    var m=ym(s.date);
+    if(!groups[m]){groups[m]=[];order.push(m);}
+    groups[m].push(s);
+  });
+  if(!order.length)return '<div class="empty">No workouts logged yet.</div>';
+  return order.map(function(m){
+    var open=!collapsedLogMonths[m], ss=groups[m];
+    return '<section class="logmonth"><button class="logmonthtoggle" aria-expanded="'+open+
+      '" onclick="toggleLogMonth(\''+m+'\')"><span class="label">'+monthLabel(m)+
+      '</span><span class="meta">'+plural(ss.length,"workout")+
+      '<span class="chev">&#9660;</span></span></button>'+
+      (open?'<div class="list">'+ss.map(sessionCard).join("")+'</div>':'')+'</section>';
+  }).join("");
+}
+function toggleLogMonth(m){
+  if(collapsedLogMonths[m])delete collapsedLogMonths[m]; else collapsedLogMonths[m]=true;
+  render();
+}
 function calendar(){
   var m=S.month, first=calendarStartMonth(), last=ym(today());
   if(m<first||m>last)m=last;
-  var ss=sorted();
-  return calendarMonth(m)+'<h2 class="loghead">Workout log</h2>'+
-    (ss.length?'<div class="list monthsessions">'+ss.map(sessionCard).join("")+'</div>':
-      '<div class="empty">No workouts logged yet.</div>');
+  return calendarMonth(m)+'<h2 class="loghead">Workout log</h2>'+workoutLog();
 }
 
 /* A shared session, as the crew sees it: the same card the calendar screen

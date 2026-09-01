@@ -242,6 +242,14 @@ S().sessions.push({id:"older-log",date:"2026-07-04",split:"pull",ex:[]});
 sandbox.render();
 ok("the workout log is not filtered by the displayed month",
    viewHTML().indexOf("Sat, Jul 4") >= 0 && viewHTML().indexOf("Workout log") >= 0);
+ok("the workout log is grouped by month",
+   viewHTML().indexOf("August 2026") >= 0 && viewHTML().indexOf("July 2026") >= 0 &&
+   viewHTML().indexOf("5 workouts") >= 0);
+sandbox.toggleLogMonth("2026-07");
+ok("a workout month can be collapsed",
+   viewHTML().indexOf("Sat, Jul 4") < 0 &&
+   /aria-expanded="false" onclick="toggleLogMonth\('2026-07'\)"/.test(viewHTML()));
+sandbox.toggleLogMonth("2026-07");
 S().sessions.pop();
 
 /* ---- 5. classification ---- */
