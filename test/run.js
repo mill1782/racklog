@@ -225,6 +225,8 @@ sandbox.goHome();
 ok("month grid renders", viewHTML().indexOf("calgrid") >= 0);
 ok("labelled August 2026", viewHTML().indexOf("August 2026") >= 0);
 ok("a dot per session", (viewHTML().match(/<i data-split=/g) || []).length >= 5);
+ok("trained-day totals count only the displayed month",
+   viewHTML().indexOf('<div><b>5</b>days trained</div>') >= 0);
 eq("only one calendar viewport renders", (viewHTML().match(/class="calviewport"/g) || []).length, 1);
 eq("the viewport always contains six complete weeks",
    (viewHTML().match(/class="cell(?: [^"]*)?"/g) || []).length, 42);

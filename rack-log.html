@@ -1043,8 +1043,9 @@ function calendarMonth(m){
         '" onclick="openSession(\''+ss[0].id+'\')">'+dt.getDate()+dots+'</button>'
       : '<div class="'+cls+'">'+dt.getDate()+dots+'</div>';
   }
-  var ms=inMonth(m), days=Object.keys(byDay).length, mins=0, vol=0;
-  ms.forEach(function(s){var t=totals(s); mins+=t.mins; vol+=t.vol;});
+  var ms=inMonth(m), trainedDays={}, mins=0, vol=0;
+  ms.forEach(function(s){var t=totals(s); trainedDays[s.date]=true; mins+=t.mins; vol+=t.vol;});
+  var days=Object.keys(trainedDays).length;
   return '<section class="calviewport" data-month="'+m+'" '+
     'ontouchstart="calendarTouchStart(event)" ontouchend="calendarTouchEnd(event)">'+
     '<div class="calmonthhead"><button onclick="openMonthPicker(\''+m+'\')" '+
