@@ -275,6 +275,10 @@ sandbox.document.getElementById("q").value = "Squ";
 sandbox.fillPick();
 ok("logged exercise matches appear before add-exercise choices",
    pickHTML().indexOf("You&rsquo;ve logged these") < pickHTML().indexOf("Add &ldquo;Squ&rdquo; as"));
+sandbox.document.getElementById("q").value = "dumbell";
+sandbox.fillPick();
+ok("the exercise picker forgives a one-letter misspelling",
+   pickHTML().indexOf("Dumbbell") >= 0);
 sandbox.document.getElementById("q").value = "Sled Push";
 sandbox.fillPick();
 eq("a new name offers lift classifications and a timed hold",
@@ -1170,6 +1174,11 @@ function fakeServer() {
   sandbox.document.getElementById("exq").value = "BENCH";
   sandbox.filterExercises();
   ok("search ignores case", exList().indexOf("Bench") >= 0);
+
+  sandbox.document.getElementById("exq").value = "dumbell";
+  sandbox.filterExercises();
+  ok("search forgives one typo in a longer word",
+     sandbox.searchMatch("Dumbbell Row", "dumbell"));
 
   sandbox.document.getElementById("exq").value = "zzzz";
   sandbox.filterExercises();

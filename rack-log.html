@@ -916,6 +916,27 @@ function initials(n){
   return n.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join("").toUpperCase();}
 function firstName(n){return n.split(/\s+/)[0];}
 function plural(n,w){return n+" "+w+(n===1?"":"s");}
+/* Search stays exact for short fragments, but forgives one typo in a longer
+   word: "dumbell" finds "dumbbell" without making "row" match everything. */
+function oneEditApart(a,b){
+  if(Math.abs(a.length-b.length)>1)return false;
+  var i=0,j=0,diffs=0;
+  while(i<a.length&&j<b.length){
+    if(a.charAt(i)===b.charAt(j)){i++;j++;continue;}
+    if(++diffs>1)return false;
+    if(a.length>b.length)i++; else if(b.length>a.length)j++; else{i++;j++;}
+  }
+  return diffs+(i<a.length||j<b.length?1:0)<=1;
+}
+function searchMatch(text,query){
+  var hay=String(text||"").toLowerCase(), q=String(query||"").trim().toLowerCase();
+  if(!q)return true;
+  var words=hay.split(/[^a-z0-9]+/).filter(Boolean);
+  return q.split(/\s+/).every(function(term){
+    if(hay.indexOf(term)>=0)return true;
+    return term.length>=5&&words.some(function(word){return oneEditApart(word,term);});
+  });
+}
 /* your shared sessions and the crew's, newest first */
 /* The feed is whatever the server last handed back — one source of truth, so
    a session you share appears for you exactly as it appears for everyone else.
@@ -1285,7 +1306,7 @@ var exQuery="";
 function exerciseListHTML(){
   var q=exQuery.trim().toLowerCase();
   var idx=Array.from(exerciseIndex().values())
-    .filter(function(e){ return !q || e.name.toLowerCase().indexOf(q)>=0; })
+    .filter(function(e){ return searchMatch(e.name,q); })
     .sort(function(a,b){return b.last.localeCompare(a.last);});
   if(!idx.length) return '<div class="empty">'+(q
     ? 'Nothing logged matches &ldquo;'+esc(exQuery)+'&rdquo;.'
@@ -2087,7 +2108,7 @@ function fitsDay(sp,day,kind){
 function fillPick(){
   var q=Q.value.trim().toLowerCase();
   var idx=exerciseIndex(), t=editable(), split=t?t.split:"push";
-  var mine=Array.from(idx.values()).filter(function(e){return e.name.toLowerCase().indexOf(q)>=0;})
+  var mine=Array.from(idx.values()).filter(function(e){return searchMatch(e.name,q);})
     .sort(function(a,b){
       var ap=fitsDay(a.split,split,a.kind);
       var bp=fitsDay(b.split,split,b.kind);
@@ -2097,13 +2118,13 @@ function fillPick(){
   /* library movements not yet logged, kept in their own classification */
   var groups=["push","pull","legs","other"].map(function(sp){
     return {split:sp, items:(EXTRA[sp]||[]).filter(function(n){
-      return !known[n.toLowerCase()] && n.toLowerCase().indexOf(q)>=0;})};})
+      return !known[n.toLowerCase()] && searchMatch(n,q);})};})
     .filter(function(g){return g.items.length;});
   /* the day you're on floats to the top */
   groups.sort(function(a,b){return (fitsDay(b.split,split,"lift")?1:0)-
     (fitsDay(a.split,split,"lift")?1:0);});
   var cardio=CARDIO_LIB.filter(function(c){
-    return !known[c.name.toLowerCase()] && c.name.toLowerCase().indexOf(q)>=0;});
+    return !known[c.name.toLowerCase()] && searchMatch(c.name,q);});
 
   var allLib=[]; groups.forEach(function(g){allLib=allLib.concat(g.items);});
   var exact = !!known[q] || allLib.concat(cardio.map(function(c){return c.name;}))
