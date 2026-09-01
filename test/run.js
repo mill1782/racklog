@@ -20,6 +20,7 @@ const html = fs.readFileSync(file, "utf8");
 const workerSource = fs.readFileSync(path.join(__dirname, "..", "worker", "index.js"), "utf8");
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) { console.error("No <script> block found in " + file); process.exit(1); }
+const cssHidesCollapsedLog = /\.logmonth \.list\[hidden\]\s*\{\s*display:none\s*\}/.test(html);
 
 /* ---- minimal DOM ---- */
 const els = {};
@@ -218,6 +219,7 @@ ok("planks get time history instead of a 1RM chart",
 
 /* ---- 4. calendar ---- */
 group("Calendar");
+ok("collapsed workout groups are hidden despite the list display rule", cssHidesCollapsedLog);
 S().month = "2026-08";
 sandbox.goHome();
 ok("month grid renders", viewHTML().indexOf("calgrid") >= 0);
