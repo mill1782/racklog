@@ -4,12 +4,14 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
 :root{
+  --keyboard-inset:0px; --sheet-vh:100dvh;
   --bg:#F2F3F5; --frame:#E4E6EB;
   --surface:#FFFFFF; --surface-2:#E9EBEF; --surface-3:#DFE2E8;
   --ink:#16181D; --ink-2:#565C68; --ink-3:#878E9C;
   --line:#DCDFE5; --line-2:#C8CCD4;
   --accent:#C8372A; --on-accent:#FFFFFF; --on-chip:#FFFFFF;
   --push:#C8372A; --pull:#2C5FBF; --legs:#8F6714; --cardio:#2E7D4F; --other:#5B6472;
+  --upper:#6B4FA1; --lower:#68752B; --full:#9A4F2E;
   /* people, deliberately off the bumper-plate hues so a person's disc is never
      mistaken for a split colour */
   --p1:#6B5B95; --p2:#2F7C82; --p3:#8A4A6B;
@@ -23,6 +25,7 @@
     --line:#2A2F38; --line-2:#39404B;
     --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
     --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+    --upper:#A98AE2; --lower:#B7C85A; --full:#E58A5F;
     --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
   }
@@ -34,6 +37,7 @@
   --line:#2A2F38; --line-2:#39404B;
   --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
   --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+  --upper:#A98AE2; --lower:#B7C85A; --full:#E58A5F;
   --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
 }
@@ -88,6 +92,9 @@ header{padding:18px 16px 12px;display:flex;align-items:flex-end;justify-content:
 [data-split="legs"]{--c:var(--legs)}
 [data-split="cardio"]{--c:var(--cardio)}
 [data-split="other"]{--c:var(--other)}
+[data-split="upper"]{--c:var(--upper)}
+[data-split="lower"]{--c:var(--lower)}
+[data-split="full"]{--c:var(--full)}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:14px;display:block;width:100%;text-align:left}
@@ -174,8 +181,7 @@ button.card:active{transform:scale(.995)}
 .empty{text-align:center;color:var(--ink-3);padding:44px 20px;font-size:14px;line-height:1.6}
 
 /* the door: the only thing on screen until the server says who you are */
-.splash{display:block;width:100%;height:100%;object-fit:cover;object-position:center;
-  background:#111820}
+.bootscreen{flex:1;background:#16181D}
 .gate{max-width:320px;margin:0 auto;padding:12vh 0 40px;text-align:center}
 .brandmark{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:36px;
   line-height:1.05;text-transform:uppercase;letter-spacing:.03em}
@@ -229,12 +235,32 @@ header .back+h1{margin-top:8px}
   border:1px solid var(--line);font-family:"Barlow Condensed",sans-serif;font-weight:600;
   text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--ink-2)}
 .userbtn{display:flex;align-items:center;padding:4px 0;margin:0}
+.userbtn .who{position:relative}
 .userbtn .avatar{width:28px;height:28px;font-size:12px}
 .userbtn .nm{font-size:16px}
 .userbtn:hover .nm{color:var(--accent)}
+.notifybadge{position:absolute;top:-7px;left:18px;min-width:17px;height:17px;padding:0 4px;
+  box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--on-accent);
+  border:2px solid var(--bg);font:700 10px/13px ui-monospace,SFMono-Regular,Menlo,monospace;
+  text-align:center}
+.notice-list{display:flex;flex-direction:column;gap:8px}
+.notice{width:100%;display:flex;gap:11px;align-items:flex-start;text-align:left;padding:12px;
+  border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.notice.unread{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.notice .avatar{flex:none;width:31px;height:31px;font-size:11px}
+.notice-copy{min-width:0;flex:1;color:var(--ink-2);font-size:13px;line-height:1.4}
+.notice-copy b{color:var(--ink);font-weight:600}.notice-copy small{display:block;margin-top:4px;
+  color:var(--ink-3);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
 
 .datasec{margin-bottom:28px}
 .datasec p{margin:6px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.55}
+.prefrow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  text-align:left;font-size:14px;font-weight:500}
+.prefstate{flex:none;min-width:38px;padding:4px 8px;border-radius:999px;text-align:center;
+  background:var(--surface-2);color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;
+  font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.prefrow[aria-pressed="true"] .prefstate{background:var(--accent);color:var(--on-accent)}
 .fld{display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:11px 12px;
   background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;
   font-family:"Barlow",sans-serif;font-size:16px}
@@ -294,8 +320,9 @@ button.ghostset:hover{border-style:solid;border-color:var(--accent);color:var(--
 
 .scrim{position:absolute;inset:0;background:rgba(10,11,14,.5);opacity:0;pointer-events:none;
   transition:opacity .18s;z-index:5}
-.sheet{position:absolute;left:0;right:0;bottom:0;z-index:6;background:var(--surface);
-  border-top:1px solid var(--line);border-radius:16px 16px 0 0;max-height:82%;
+.sheet{position:absolute;left:0;right:0;bottom:var(--keyboard-inset);z-index:6;background:var(--surface);
+  border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  height:min(82%,calc(var(--sheet-vh) - 12px));
   display:flex;flex-direction:column;
   transform:translateY(101%);transition:transform .22s cubic-bezier(.3,.8,.4,1)}
 body.sheet-open #scrim{opacity:1;pointer-events:auto}
@@ -328,12 +355,16 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 
 .calwrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 12px 10px;margin-bottom:12px}
-.calhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
-.calhead h2{font-size:19px;text-transform:uppercase;letter-spacing:.04em}
-.calnav{width:34px;height:34px;flex:none;border-radius:8px;background:var(--surface-2);
-  color:var(--ink-2);font-size:15px;line-height:1}
-.calnav:hover{background:var(--surface-3);color:var(--ink)}
-.calnav:disabled{opacity:.3;cursor:default}
+.calmonth{scroll-margin-top:8px;margin-bottom:18px}
+.calmonthhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;
+  justify-content:space-between;background:var(--bg);padding:7px 0}
+.calmonthhead button{display:flex;align-items:center;gap:7px;padding:7px 2px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;
+  text-transform:uppercase;letter-spacing:.04em}
+.calmonthhead button:hover{color:var(--accent)}
+.calmonthhead .jumpmark{font-size:10px;color:var(--ink-3)}
+.calmonthhead .current{font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}
 .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .caldow{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
   letter-spacing:.1em;color:var(--ink-3);text-align:center;padding-bottom:2px}
@@ -350,6 +381,18 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 .calfoot div{font-size:13px;color:var(--ink-3)}
 .calfoot b{font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--ink);font-size:15px;
   display:block;margin-bottom:1px}
+.monthsessions{margin-top:10px}
+.monthpickerhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.monthpickerhead h2{font-size:22px}
+.monthpickerhead button{width:38px;height:38px;border-radius:8px;background:var(--surface-2);
+  font-size:18px}
+.monthpickgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.monthpickgrid button{min-height:42px;border:1px solid var(--line);border-radius:8px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;text-transform:uppercase;
+  letter-spacing:.06em;font-size:13px}
+.monthpickgrid button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.monthpickgrid button[aria-current="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.monthpickgrid button:disabled{opacity:.28;cursor:default}
 .statrow{display:flex;gap:10px;margin-bottom:12px}
 .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 12px}
 .stat .v{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:700;line-height:1.15;margin-top:3px}
@@ -395,7 +438,7 @@ figcaption span{font-size:12px;color:var(--ink-3);text-align:right}
 "use strict";
 
 /* ---------- exercise kinds ----------
-   Every exercise is one of three kinds; a set is an array of numbers
+   Every exercise is one of four kinds; a set is an array of numbers
    matching that kind's field list, so lifting and cardio share all the
    same plumbing (history, prefill, last-time chips, charts).           */
 var KINDS={
@@ -411,6 +454,10 @@ var KINDS={
     fields:[{label:"Minutes",step:5,unit:"min"},{label:"Speed (mph)",step:.5,unit:"mph"},
             {label:"Incline %",step:.5,unit:"%"}],
     metric:"time"
+  },
+  hold:{
+    fields:[{label:"Seconds",step:5,unit:"sec"},{label:"Weight (lb, optional)",step:5,unit:"lb"}],
+    metric:"time"
   }
 };
 var CARDIO_LIB=[
@@ -423,26 +470,31 @@ var CARDIO_LIB=[
 ];
 var LIB_KIND={}; CARDIO_LIB.forEach(function(c){LIB_KIND[c.name]=c.kind;});
 function kindOf(x){return x.kind||LIB_KIND[x.name]||"lift";}
-function isCardio(k){return k!=="lift";}
+function isCardio(k){return k==="machine"||k==="tread";}
 
 /* Library of movements, classified. Anything you've already logged is
    pulled out of here automatically, so the picker never lists it twice. */
 var EXTRA = {
   push:["Barbell Bench Press","Dumbbell Bench Press","Incline Dumbbell Press","Decline Bench",
-        "Chest Press","Cable Fly","Dips","Push Up",
+        "Chest Press","Cable Fly","Dumbbell Fly","Dips","Push Up",
         "Overhead Press","Seated Dumbbell Press","Machine Shoulder Press",
         "Cable Lateral Raise","Front Raise","Upright Row",
-        "Close Grip Bench","Skullcrusher","Overhead Tricep Extension","Tricep Kickback"],
+        "Close Grip Bench","Skullcrusher","Overhead Tricep Extension",
+        "Dumbbell Tricep Extension","Tricep Kickback"],
   pull:["Deadlift","Barbell Row","Pendlay Row","T-Bar Row","Chest Supported Row",
-        "Pull Up","Chin Up","Straight Arm Pulldown","Face Pull","Shrug",
+        "One-Arm Dumbbell Row","Dumbbell Reverse Fly","Dumbbell Shrug",
+        "Pull Up","Chin Up","Straight Arm Pulldown","Dumbbell Pullover","Face Pull","Shrug",
         "Barbell Curl","Hammer Curl","Incline Dumbbell Curl","Cable Curl","Concentration Curl"],
-  legs:["Leg Press","Hack Squat","Front Squat","Goblet Squat",
-        "Bulgarian Split Squat","Walking Lunge","Reverse Lunge","Step Up",
-        "Romanian Deadlift","Good Morning","Hip Thrust","Glute Bridge",
+  legs:["Leg Press","Hack Squat","Front Squat","Goblet Squat","Dumbbell Squat",
+        "Sumo Dumbbell Squat","Bulgarian Split Squat","Walking Lunge","Dumbbell Lunge",
+        "Reverse Lunge","Step Up","Dumbbell Step Up",
+        "Romanian Deadlift","Dumbbell Romanian Deadlift","Good Morning","Hip Thrust","Glute Bridge",
         "Seated Leg Curl","Seated Calf Raise","Adductor Machine","Abductor Machine"],
   other:["Plank","Side Plank","Ab Wheel","Hanging Leg Raise","Cable Crunch",
-         "Russian Twist","Sit Up","Pallof Press","Back Extension"]
+         "Russian Twist","Sit Up","Pallof Press","Back Extension",
+         "Farmer Carry","Dumbbell Thruster","Renegade Row"]
 };
+LIB_KIND["Plank"]="hold"; LIB_KIND["Side Plank"]="hold";
 /* ---------- crew ----------
    Who you are, and who the crew is, both come from the server now: `SY.user`
    for you, and the feed items themselves for everyone else. There are no
@@ -477,8 +529,10 @@ function buildPeople(items,people,crew){
 }
 var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
   legs:"Legs movements",other:"Core &amp; other"};
-var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["cardio","Cardio"],["other","Other"]];
-var SPLIT_NAME={push:"Push",pull:"Pull",legs:"Legs",cardio:"Cardio",other:"Other"};
+var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["upper","Upper"],
+  ["lower","Lower"],["full","Full Body"],["cardio","Cardio"],["other","Other"]];
+var SPLIT_NAME={push:"Push",pull:"Pull",legs:"Legs",upper:"Upper",lower:"Lower",
+  full:"Full Body",cardio:"Cardio",other:"Other"};
 /* The real current day, in the user's own timezone, recomputed per call so a
    page left open overnight rolls over. Deliberately NOT toISOString(): that is
    UTC, which files a 7pm workout in the US under tomorrow's date. */
@@ -505,7 +559,7 @@ function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 /* A new device starts EMPTY. Signing in pulls your own history down; the
    crew tab fills from the server. Nothing is invented locally. */
 function blank(){ return {sessions:[],live:null,tab:"history",home:"mine",
-  month:today().slice(0,7),social:{}}; }
+  month:today().slice(0,7),social:{},autoShare:true}; }
 var S=blank(), view={name:"home"}, openThread=null;
 
 /* Swap the whole local store over to one account. Called from syncBoot, and
@@ -519,6 +573,7 @@ function loadStore(uid){
   /* filled in place rather than by bumping the key, which would wipe real
      logged workouts (HANDOFF trap 5). Do the same for the next field. */
   if(!S.social) S.social={};
+  if(S.autoShare===undefined) S.autoShare=true;
   /* the calendar is home: every launch opens there, whatever tab you left on,
      and on Mine rather than the crew feed */
   S.tab="history"; S.home="mine";
@@ -545,7 +600,8 @@ function save(){ saveLocal(); syncSoon(); }
    against it. That is why none of the fifteen mutation paths had to change:
    they all end in save(), and save() is enough. */
 var SY={since:0,shadow:{},user:null,google:false,feed:[],crew:[],
-        counts:{following:0,followers:0}};
+        counts:{following:0,followers:0},notifications:[],unread:0};
+var PUSH={enabled:false,busy:false,msg:""};
 function saveSync(){ try{ localStorage.setItem(SKEYNOW,
   JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
 
@@ -663,6 +719,7 @@ function sync(){
         SY.feed=f.items||[];
         SY.crew=f.crew||[];
         SY.counts=f.counts||{following:0,followers:0};
+        SY.unread=Number(f.unread||0);
         /* The server owns engagement now. S.social is a cache of what it last
            said, kept only so the feed still draws while offline; it is
            replaced wholesale, never merged. */
@@ -784,6 +841,8 @@ function best(sets){var b=null;sets.forEach(function(s){var v=e1rm(s[0],s[1]);
   if(!b||v>b.v)b={v:v,r:s[0],w:s[1]};});return b;}
 function heaviest(sets){var b=null;sets.forEach(function(s){if(!b||s[1]>b[1])b=s;});return b;}
 function minutes(sets){var m=0;sets.forEach(function(s){m+=s[0]||0;});return m;}
+function seconds(sets){var n=0;sets.forEach(function(s){n+=s[0]||0;});return n;}
+function holdTime(n){return n>=60?(Math.floor(n/60)+"m "+(n%60?n%60+"s":"")).trim():n+" sec";}
 function topLevel(sets){var l=0;sets.forEach(function(s){l=Math.max(l,s[1]||0);});return l;}
 function hhmm(m){return m>=60?(Math.floor(m/60)+"h "+(m%60?(m%60)+"m":"")).trim():m+" min";}
 function dstr(d,long){var dt=new Date(d+"T12:00:00");
@@ -808,9 +867,11 @@ function exerciseIndex(){var m=new Map();
     /* an exercise carries its own classification; older entries fall back
        to the split of the day they were logged on */
     var sp=x.split||(isCardio(k)?"cardio":s.split);
-    if(!m.has(x.name))m.set(x.name,{name:x.name,split:sp,kind:k,last:s.date,n:0,top:0,mins:0});
+    if(!m.has(x.name))m.set(x.name,{name:x.name,split:sp,kind:k,last:s.date,n:0,top:0,mins:0,secs:0});
     var e=m.get(x.name); e.n++;
-    if(isCardio(k)) e.mins+=minutes(x.sets); else e.top=Math.max(e.top,best(x.sets).v);});});
+    if(isCardio(k)) e.mins+=minutes(x.sets);
+    else if(k==="hold") e.secs+=seconds(x.sets);
+    else e.top=Math.max(e.top,best(x.sets).v);});});
   return m;}
 /* ---------- month helpers ---------- */
 function ym(d){return d.slice(0,7);}
@@ -826,6 +887,9 @@ function inMonth(m){return sorted().filter(function(s){return ym(s.date)===m;});
 function earliestMonth(){
   var ms=S.sessions.map(function(s){return ym(s.date);}).sort();
   return ms.length?ms[0]:ym(today());}
+function calendarStartMonth(){
+  var rolling=shiftMonth(ym(today()),-11), first=earliestMonth();
+  return first<rolling?first:rolling;}
 
 /* ---------- crew helpers ---------- */
 function meId(){ return SY.user?SY.user.id:"me"; }
@@ -860,26 +924,30 @@ function repeats(id){
   return crewFeed().filter(function(x){return x.from&&x.from.src===id;}).length;}
 
 /* one session's totals, split by kind */
-function totals(s){var v=0,mins=0,nsets=0,hasCardio=false,hasLift=false;
+function totals(s){var v=0,mins=0,secs=0,nsets=0,hasCardio=false,hasLift=false,hasHold=false;
   s.ex.forEach(function(x){
     nsets+=x.sets.length;
     if(isCardio(kindOf(x))){hasCardio=true;mins+=minutes(x.sets);}
+    else if(kindOf(x)==="hold"){hasHold=true;secs+=seconds(x.sets);}
     else{hasLift=true;x.sets.forEach(function(t){v+=t[0]*t[1];});}});
-  return {vol:v,mins:mins,sets:nsets,hasCardio:hasCardio,hasLift:hasLift};}
+  return {vol:v,mins:mins,secs:secs,sets:nsets,hasCardio:hasCardio,hasLift:hasLift,hasHold:hasHold};}
 
 /* set → display strings, per kind */
 function setHTML(k,t){
   if(k==="lift") return t[0]+'<em>reps</em>'+fmt(t[1])+'<em>lb</em>';
+  if(k==="hold") return fmt(t[0])+'<em>sec</em>'+(t[1]?fmt(t[1])+'<em>lb</em>':"");
   if(k==="machine") return fmt(t[0])+'<em>min</em>'+'<em>level</em>'+fmt(t[1]);
   return fmt(t[0])+'<em>min</em>'+fmt(t[1])+'<em>mph</em>'+fmt(t[2])+'<em>% incl</em>';
 }
 function setChip(k,t){
   if(k==="lift") return t[0]+"&times;"+fmt(t[1]);
+  if(k==="hold") return fmt(t[0])+"sec"+(t[1]?" + "+fmt(t[1])+"lb":"");
   if(k==="machine") return fmt(t[0])+"min L"+fmt(t[1]);
   return fmt(t[0])+"min "+fmt(t[1])+"mph "+fmt(t[2])+"%";
 }
 function exSummary(k,sets){
   if(k==="lift") return plural(sets.length,"set")+" &middot; top "+fmt(heaviest(sets)[1])+" lb";
+  if(k==="hold") return holdTime(seconds(sets))+(topLevel(sets)?" &middot; "+fmt(topLevel(sets))+" lb":"");
   if(k==="machine") return hhmm(minutes(sets))+" &middot; level "+fmt(topLevel(sets));
   return hhmm(minutes(sets))+" &middot; "+fmt(heaviest(sets)[1])+" mph";
 }
@@ -933,13 +1001,15 @@ function renderView(){
   if(view.name==="home")renderHome();
   else if(view.name==="session")renderSession();
   else if(view.name==="data")renderData();
+  else if(view.name==="notifications")renderNotifications();
   else renderExercise();
 }
 function scroll(html){return '<div class="scroll">'+html+'</div>';}
 
-/* month grid: one cell per day, a dot per session, coloured by split */
-function calendar(){
-  var m=S.month, n=daysIn(m), start=firstDow(m), byDay={}, i, td=today();
+/* One month in the continuous calendar: one cell per day, with a coloured
+   dot per session. The heading is both sticky and the fast way to jump. */
+function calendarMonth(m){
+  var n=daysIn(m), start=firstDow(m), byDay={}, i, td=today();
   inMonth(m).forEach(function(s){ (byDay[s.date]=byDay[s.date]||[]).push(s); });
   var cells="";
   for(i=0;i<start;i++) cells+='<div class="cell pad"></div>';
@@ -959,20 +1029,41 @@ function calendar(){
   }
   var ms=inMonth(m), days=Object.keys(byDay).length, mins=0, vol=0;
   ms.forEach(function(s){var t=totals(s); mins+=t.mins; vol+=t.vol;});
-  var canPrev = shiftMonth(m,-1) >= earliestMonth();
-  var canNext = m < ym(today());
-  return '<div class="calwrap">'+
-    '<div class="calhead">'+
-      '<button class="calnav" onclick="setMonth(-1)"'+(canPrev?"":" disabled")+
-      ' aria-label="Previous month">&lsaquo;</button>'+
-      '<h2>'+monthLabel(m)+'</h2>'+
-      '<button class="calnav" onclick="setMonth(1)"'+(canNext?"":" disabled")+
-      ' aria-label="Next month">&rsaquo;</button></div>'+
+  return '<section class="calmonth" data-month="'+m+'">'+
+    '<div class="calmonthhead"><button onclick="openMonthPicker(\''+m+'\')" '+
+      'aria-label="Jump to another month">'+monthLabel(m)+
+      '<span class="jumpmark">&#9660;</span></button>'+
+      (m===ym(today())?'<span class="current">Current month</span>':'')+'</div>'+
+    '<div class="calwrap">'+
     '<div class="calgrid">'+["S","M","T","W","T","F","S"].map(function(d){
       return '<div class="caldow">'+d+'</div>';}).join("")+cells+'</div>'+
     '<div class="calfoot"><div><b>'+days+'</b>'+(days===1?"day":"days")+' trained</div>'+
       (vol?'<div><b>'+Math.round(vol).toLocaleString()+'</b>lb lifted</div>':'')+
       (mins?'<div><b>'+mins+'</b>min cardio</div>':'')+'</div></div>';
+}
+
+function sessionCard(s){
+  var t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
+  if(t.hasLift) parts.push(plural(t.sets,"set"),
+    '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
+  if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
+  return '<button class="card" data-split="'+s.split+'" onclick="openSession(\''+s.id+'\')">'+
+    '<div class="rowbetween"><h2>'+dstr(s.date)+'</h2><span class="chip">'+
+      SPLIT_NAME[s.split]+'</span></div>'+
+    '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
+    '<div class="exlist">'+s.ex.map(function(x){
+      return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+exSummary(kindOf(x),x.sets)+
+        '</span></div>';}).join("")+'</div></button>';
+}
+function continuousCalendar(){
+  var out="", m=ym(today()), first=calendarStartMonth();
+  while(m>=first){
+    var ss=inMonth(m);
+    out+=calendarMonth(m)+(ss.length?'<div class="list monthsessions">'+
+      ss.map(sessionCard).join("")+'</div>':'')+'</section>';
+    m=shiftMonth(m,-1);
+  }
+  return '<div class="calstream">'+out+'</div>';
 }
 
 /* A shared session, as the crew sees it: the same card the calendar screen
@@ -1135,21 +1226,10 @@ function renderHome(){
     /* Mine/Crew shares the home slot, so the calendar stays the landing view
        and the bottom nav keeps its three targets */
     var seg='<div class="seg">'+
-      '<button aria-pressed="'+(S.home==="mine")+'" onclick="setHome(\'mine\')">Mine</button>'+
+      '<button aria-pressed="'+(S.home==="mine")+'" onclick="setHome(\'mine\')">Mine</button>'+ 
       '<button aria-pressed="'+(S.home==="crew")+'" onclick="setHome(\'crew\')">Crew</button></div>';
     if(S.home==="crew") return renderHomeShell(seg+crewHTML());
-    var ss=inMonth(S.month);
-    body = seg + calendar() + (ss.length ? '<div class="list">'+ss.map(function(s){
-      var t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
-      if(t.hasLift) parts.push(plural(t.sets,"set"), '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
-      if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
-      return '<button class="card" data-split="'+s.split+'" onclick="openSession(\''+s.id+'\')">'+
-        '<div class="rowbetween"><h2>'+dstr(s.date)+'</h2><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
-        '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
-        '<div class="exlist">'+s.ex.map(function(x){
-          return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+exSummary(kindOf(x),x.sets)+'</span></div>';
-        }).join("")+'</div></button>';}).join("")+'</div>'
-    : '<div class="empty">Nothing logged in '+monthLabel(S.month)+'.</div>');
+    body = seg + continuousCalendar();
   } else {
     body='<input class="search exq" id="exq" placeholder="Search exercises" '+
       'autocomplete="off" value="'+esc(exQuery)+'" oninput="filterExercises()">'+
@@ -1190,9 +1270,11 @@ function filterExercises(){
    because there is nobody to name. */
 function userChip(){
   if(!SY.user) return '<button class="back" onclick="openData()">Data</button>';
-  return '<button class="userbtn" onclick="openData()" aria-label="Your account and data">'+
+  var badge=SY.unread?'<span class="notifybadge">'+(SY.unread>99?'99+':SY.unread)+'</span>':'';
+  return '<button class="userbtn" onclick="openNotifications()" aria-label="Notifications'+
+    (SY.unread?', '+SY.unread+' unread':'')+'">'+
     '<span class="who" data-person="me"><span class="avatar">'+
-      esc(initials(SY.user.name))+'</span><span class="nm">'+
+      esc(initials(SY.user.name))+'</span>'+badge+'<span class="nm">'+
       esc(firstName(SY.user.name))+'</span></span></button>';
 }
 function renderHomeShell(body){
@@ -1227,9 +1309,12 @@ function renderSession(){
      live workout has, so there is one set of editing affordances, not two */
   var edit = !live && !!view.edit, canEdit = live || edit;
   var t=totals(s);
-  var readout = t.hasCardio && !t.hasLift
+  var readout = t.hasCardio && !t.hasLift && !t.hasHold
     ? {k:"Time",v:t.mins+" min"}
-    : {k:"Volume",v:Math.round(t.vol).toLocaleString()+(t.hasCardio?" + "+t.mins+"m":"")};
+    : t.hasHold && !t.hasLift && !t.hasCardio
+    ? {k:"Time",v:holdTime(t.secs)}
+    : {k:"Volume",v:Math.round(t.vol).toLocaleString()+
+        (t.hasCardio?" + "+t.mins+"m":"")+(t.hasHold?" + "+holdTime(t.secs):"")};
 
   var head='<div class="livehead" data-split="'+s.split+'">'+
     '<div class="rowbetween"><div><div class="eyebrow">'+
@@ -1272,7 +1357,7 @@ function renderSession(){
                                       : spec.fields.map(function(){return 0;}));
     var entry="";
     if(canEdit){
-      entry='<div class="entry'+(spec.fields.length>2?' stack':'')+'">'+
+      entry='<div class="entry'+(spec.fields.length>2?' stack':'')+'" id="entry'+i+'">'+
         spec.fields.map(function(f,j){return field(f.label,"f"+i+"_"+j,d[j],f.step);}).join("")+
         '<button class="btn addset" onclick="addSet('+i+')">Log</button></div>';
     }
@@ -1282,7 +1367,7 @@ function renderSession(){
       '<div class="exhead"><h2>'+esc(x.name)+'</h2>'+
       (canEdit?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>'
            :'<button class="back" onclick="openExercise(\''+jstr(x.name)+'\')">Chart &rsaquo;</button>')+
-      '</div>'+lastRow+(x.sets.length?'<div class="sets">'+sets+'</div>':"")+entry+'</div>';
+      '</div>'+lastRow+entry+(x.sets.length?'<div class="sets">'+sets+'</div>':"")+'</div>';
   }).join("");
 
   var empty = s.ex.length ? "" :
@@ -1306,7 +1391,8 @@ function renderSession(){
 function field(label,id,val,step){
   return '<div class="field"><label for="'+id+'">'+label+'</label><div class="stepper">'+
     '<button tabindex="-1" aria-label="decrease" onclick="bump(\''+id+'\',-'+step+')">&minus;</button>'+
-    '<input id="'+id+'" type="number" inputmode="decimal" step="'+step+'" value="'+(val||"")+'">'+
+    '<input id="'+id+'" type="number" inputmode="decimal" step="'+step+'" value="'+(val||"")+'" '+
+      'onfocus="this.select()" onclick="this.select()">'+
     '<button tabindex="-1" aria-label="increase" onclick="bump(\''+id+'\','+step+')">+</button></div></div>';
 }
 
@@ -1315,7 +1401,19 @@ function renderExercise(){
   if(!h.length){ view={name:"home"}; return render(); }
   var k=h[0].kind, stats, fig;
 
-  if(isCardio(k)){
+  if(k==="hold"){
+    var hpts=h.slice().reverse().map(function(x){return {date:x.date,v:seconds(x.sets),
+      tag:topLevel(x.sets)?fmt(topLevel(x.sets))+"lb":"bodyweight"};});
+    var totalSec=0,longestSec=0;
+    h.forEach(function(x){totalSec+=seconds(x.sets);x.sets.forEach(function(t){longestSec=Math.max(longestSec,t[0]||0);});});
+    var lastHold=h[0].sets[h[0].sets.length-1];
+    stats='<div class="statrow">'+
+      '<div class="stat"><div class="eyebrow">Total time</div><div class="v">'+holdTime(totalSec)+'</div></div>'+
+      '<div class="stat"><div class="eyebrow">Longest</div><div class="v">'+holdTime(longestSec)+'</div></div>'+
+      '<div class="stat"><div class="eyebrow">Last weight</div><div class="v">'+fmt(lastHold[1]||0)+' <s>lb</s></div></div></div>';
+    fig='<figure><figcaption><b>Seconds per session</b><span>labelled with added weight</span></figcaption>'+
+      barChart(hpts)+'</figure>';
+  } else if(isCardio(k)){
     var pts=h.slice().reverse().map(function(x){
       return {date:x.date, v:minutes(x.sets),
         tag: k==="machine" ? "L"+fmt(topLevel(x.sets)) : fmt(heaviest(x.sets)[1])+"mph"};});
@@ -1379,6 +1477,61 @@ function authSection(){
     '<p>Sign in to keep these workouts on every device. Anything already logged '+
     'here is uploaded, not replaced.</p>'+signInForm()+'</div>';
 }
+function sharingSection(){
+  var on=S.autoShare!==false;
+  return '<div class="datasec"><div class="eyebrow">Sharing</div>'+ 
+    '<p>New workouts are shared with your followers when you finish them. '+
+    'You can still change any individual workout afterward.</p>'+ 
+    '<button class="prefrow" aria-pressed="'+on+'" onclick="toggleAutoShare()">'+
+    '<span>Automatically share new workouts</span><span class="prefstate">'+
+    (on?'On':'Off')+'</span></button></div>';
+}
+function toggleAutoShare(){ S.autoShare=S.autoShare===false; saveLocal(); render(); }
+function pushSupported(){return API===true&&SY.user&&typeof navigator!=="undefined"&&
+  "serviceWorker" in navigator&&typeof PushManager!=="undefined"&&
+  typeof Notification!=="undefined";}
+function pushSection(){
+  if(API!==true||!SY.user) return "";
+  var supported=pushSupported(), denied=supported&&Notification.permission==="denied";
+  var note=!supported?"Android notifications are not supported in this browser.":
+    denied?"Notifications are blocked in Android settings for Rack Log.":
+    "Get an Android alert when someone likes or comments on your workout. Likes are grouped to avoid noise.";
+  return '<div class="datasec"><div class="eyebrow">Notifications</div><p>'+note+'</p>'+ 
+    (supported&&!denied?'<button class="prefrow" aria-pressed="'+PUSH.enabled+'" '+
+      (PUSH.busy?'disabled ':'')+'onclick="togglePush()"><span>Likes and comments</span><span class="prefstate">'+
+      (PUSH.busy?'Working…':PUSH.enabled?'On':'Off')+'</span></button>':'')+
+    '<div id="pushmsg" class="msg">'+esc(PUSH.msg)+'</div></div>';
+}
+function b64bytes(s){
+  s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4)s+="=";
+  var raw=atob(s), out=new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i); return out;
+}
+function refreshPush(){
+  if(!pushSupported()) return Promise.resolve();
+  return navigator.serviceWorker.register("/sw.js").then(function(){return navigator.serviceWorker.ready;})
+    .then(function(reg){return reg.pushManager.getSubscription();})
+    .then(function(sub){PUSH.enabled=!!sub;if(view.name==="data")render();},function(){});
+}
+function togglePush(){
+  if(PUSH.busy||!pushSupported())return;
+  PUSH.busy=true;PUSH.msg="";render();
+  navigator.serviceWorker.register("/sw.js").then(function(){return navigator.serviceWorker.ready;})
+    .then(function(reg){return reg.pushManager.getSubscription().then(function(sub){return {reg:reg,sub:sub};});})
+    .then(function(x){
+      if(x.sub&&PUSH.enabled) return apiFetch("/api/push",{method:"DELETE",body:JSON.stringify({endpoint:x.sub.endpoint})})
+        .then(function(){return x.sub.unsubscribe();}).then(function(){PUSH.enabled=false;PUSH.msg="Notifications are off on this device.";});
+      return Notification.requestPermission().then(function(permission){
+        if(permission!=="granted")throw new Error("Android did not allow notifications.");
+        return apiFetch("/api/push").then(function(cfg){
+          if(!cfg.publicKey)throw new Error("Notifications are not ready yet.");
+          return x.reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64bytes(cfg.publicKey)});
+        }).then(function(sub){return apiFetch("/api/push",{method:"POST",body:JSON.stringify({subscription:sub.toJSON()})});})
+          .then(function(){PUSH.enabled=true;PUSH.msg="Notifications are on for this device.";});
+      });
+    }).catch(function(e){PUSH.msg=(e&&e.message)||"Couldn’t change notifications.";})
+    .then(function(){PUSH.busy=false;render();});
+}
 /* One form, three homes: the front door, the join door, and the profile
    screen on a standalone copy that later finds a server. Three of these would
    drift. It carries both halves -- signing in and signing up -- because they
@@ -1411,7 +1564,7 @@ function gateShell(body){
   BAR.innerHTML="";
 }
 function renderSplash(){
-  V.innerHTML='<img class="splash" src="/splash.jpg" alt="Rack Log — Track Your Grits. Log Your Lifts.">';
+  V.innerHTML='<div class="bootscreen" aria-label="Loading Rack Log"></div>';
   BAR.innerHTML="";
 }
 /* The invite door, for somebody who is NOT signed in. Since signup opened,
@@ -1579,10 +1732,37 @@ function renderData(){
       '<div class="datasec"><div class="eyebrow">Logged</div><p>'+
         plural(n,"finished session")+(t?', <span class="num">'+
         Math.round(t).toLocaleString()+'</span> lb moved in total':'')+'.</p></div>'+
-      authSection()+passwordSection()+crewSection());
+      sharingSection()+pushSection()+authSection()+passwordSection()+crewSection());
   BAR.innerHTML=homeBar(false);
 }
-function openData(){view={name:"data",from:view};INV.msg="";render();loadInvites();}
+function openData(){view={name:"data",from:view};INV.msg="";render();loadInvites();refreshPush();}
+function noticeTime(ms){return new Date(ms).toLocaleString("en-US",{month:"short",day:"numeric",
+  hour:"numeric",minute:"2-digit"});}
+function renderNotifications(){
+  var rows=SY.notifications||[];
+  var body=rows.length?'<div class="notice-list">'+rows.map(function(n){
+    var what=(SPLIT_NAME[n.workout_split]||"Workout")+' workout &middot; '+dstr(n.workout_date);
+    var action=n.kind==="comment"?' commented: &ldquo;'+esc(n.body)+'&rdquo;':' liked your workout';
+    return '<button class="notice'+(n.unread?' unread':'')+'" onclick="openNotice(\''+jstr(n.item_id)+'\')">'+
+      '<span class="avatar">'+esc(n.actor_initials||initials(n.actor_name))+'</span><span class="notice-copy">'+
+      '<b>'+esc(n.actor_name)+'</b>'+action+'<small>'+what+' &middot; '+noticeTime(n.created)+'</small></span></button>';
+  }).join("")+'</div>':'<div class="empty">No likes or comments yet.</div>';
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button><h1>Notifications</h1></div>'+ 
+    '<button class="back" onclick="openData()">Profile</button></header>'+scroll(body);
+  BAR.innerHTML=homeBar(false);
+}
+function loadNotifications(markRead){
+  if(API!==true||!SY.user)return Promise.resolve();
+  return apiFetch("/api/notifications").then(function(j){
+    SY.notifications=j.items||[];SY.unread=Number(j.unread||0);
+    if(markRead&&SY.unread){SY.unread=0;apiFetch("/api/notifications/read",{method:"POST"}).catch(function(){});}
+    render();
+  },function(){if(view.name==="notifications")render();});
+}
+function openNotifications(){view={name:"notifications",from:view};render();loadNotifications(true);}
+function openNotice(id){
+  var found=feedItem(id);S.home="crew";S.tab="history";view={name:"home"};openThread=found?id:null;render();
+}
 function msg(id,text,bad){var e=document.getElementById(id);
   if(e){e.className="msg"+(bad?" bad":"");e.textContent=text;}}
 
@@ -1649,8 +1829,9 @@ function postSocial(body){
 function toggleLike(id){
   var l=socW(id).likes, i=l.indexOf(meId());
   if(i>=0) l.splice(i,1); else l.push(meId());
+  var on=i<0;
   saveLocal(); render();
-  postSocial({item:id,kind:"like"});
+  postSocial({item:id,kind:"like",on:on});
 }
 function toggleThread(id){openThread=(openThread===id?null:id);render();}
 function addComment(id){
@@ -1699,7 +1880,34 @@ function toggleShare(){
   if(s.shared) delete s.shared; else s.shared=true;
   save(); render();
 }
-function setMonth(n){S.month=shiftMonth(S.month,n);save();render();}
+function setMonth(n){jumpToMonth(shiftMonth(S.month,n));} /* legacy exported-data compatibility */
+var pickerYear=+(S.month||ym(today())).slice(0,4);
+function openMonthPicker(m){
+  S.month=m||ym(today()); pickerYear=+S.month.slice(0,4); renderMonthPicker();
+  dlgOpen=true; document.body.classList.add("dialog-open");
+}
+function renderMonthPicker(){
+  var first=calendarStartMonth(), last=ym(today()), y=pickerYear, buttons="", i;
+  for(i=1;i<=12;i++){
+    var m=y+"-"+String(i).padStart(2,"0"), enabled=m>=first&&m<=last;
+    buttons+='<button onclick="jumpToMonth(\''+m+'\')"'+(enabled?'':' disabled')+
+      ' aria-current="'+(m===S.month)+'">'+monthLabel(m).split(" ")[0]+'</button>';
+  }
+  DLG.innerHTML='<div class="monthpickerhead"><button onclick="monthPickerYear(-1)" '+
+    'aria-label="Previous year">&lsaquo;</button><h2>'+y+'</h2><button onclick="monthPickerYear(1)" '+
+    (y>=+last.slice(0,4)?'disabled ':'')+'aria-label="Next year">&rsaquo;</button></div>'+
+    '<div class="monthpickgrid">'+buttons+'</div>';
+}
+function monthPickerYear(n){pickerYear+=n; renderMonthPicker();}
+function jumpToMonth(m){
+  var first=calendarStartMonth(), last=ym(today());
+  if(m<first||m>last)return;
+  S.month=m; closeDialog(); save(); render();
+  setTimeout(function(){
+    var el=document.querySelector('[data-month="'+m+'"]');
+    if(el&&el.scrollIntoView)el.scrollIntoView({block:"start",behavior:"smooth"});
+  },40);
+}
 /* home always means the calendar, never whichever tab was last open */
 function goHome(){S.tab="history";view={name:"home"};save();render();}
 function resume(){view={name:"session"};render();}
@@ -1739,7 +1947,11 @@ function addSet(i){
     if(isNaN(v))v=0;
     vals.push(v);});
   if(vals[0]<=0) return;            /* reps, or minutes, must be > 0 */
-  x.sets.push(vals); x.draft=vals.slice(); save(); render();
+  x.sets.push(vals); x.draft=vals.slice(); save(); render(); revealEntry(i);
+}
+function revealEntry(i){
+  setTimeout(function(){var e=document.getElementById("entry"+i);
+    if(e&&e.scrollIntoView) e.scrollIntoView({block:"nearest",behavior:"smooth"});},40);
 }
 function delSet(i,j){var t=editable(); if(!t)return; t.ex[i].sets.splice(j,1);save();render();}
 function delEx(i){var t=editable(); if(!t)return; t.ex.splice(i,1);save();render();}
@@ -1766,9 +1978,10 @@ function finish(){
   var l=S.live;
   l.ex=l.ex.filter(function(x){return x.sets.length;});
   l.ex.forEach(function(x){delete x.draft;});
-  /* shared by default; the Share button on the finished session is the way
-     out, and it is one tap */
-  if(l.ex.length){ l.id="u"+Date.now(); l.shared=true; S.sessions.push(l); S.month=ym(l.date); }
+  /* shared by default unless this account has disabled automatic sharing;
+     the finished session still has a one-tap per-workout override */
+  if(l.ex.length){ l.id="u"+Date.now(); if(S.autoShare!==false) l.shared=true;
+    S.sessions.push(l); S.month=ym(l.date); }
   S.live=null; S.tab="history"; view={name:"home"}; save(); render();
 }
 
@@ -1799,15 +2012,35 @@ Q.addEventListener("keydown",function(e){
   if(e.key==="Escape")closeSheet();
 });
 function openSheet(){document.body.classList.add("sheet-open");Q.value="";fillPick();
-  setTimeout(function(){Q.focus();},220);}
-function closeSheet(){document.body.classList.remove("sheet-open");}
+  fitSheet(); setTimeout(function(){Q.focus();fitSheet();},220);}
+function closeSheet(){document.body.classList.remove("sheet-open");
+  if(Q.blur)Q.blur(); if(document.documentElement&&document.documentElement.style)
+    document.documentElement.style.setProperty("--keyboard-inset","0px");}
+function fitSheet(){
+  if(typeof visualViewport==="undefined"||!document.documentElement||!document.documentElement.style) return;
+  var base=(typeof innerHeight==="number"?innerHeight:visualViewport.height);
+  var covered=Math.max(0,base-visualViewport.height-visualViewport.offsetTop);
+  document.documentElement.style.setProperty("--keyboard-inset",covered+"px");
+  document.documentElement.style.setProperty("--sheet-vh",visualViewport.height+"px");
+}
+if(typeof visualViewport!=="undefined"&&visualViewport.addEventListener){
+  visualViewport.addEventListener("resize",fitSheet);
+  visualViewport.addEventListener("scroll",fitSheet);
+}
+function fitsDay(sp,day,kind){
+  if(day==="upper") return sp==="push"||sp==="pull";
+  if(day==="lower") return sp==="legs";
+  if(day==="full") return sp==="push"||sp==="pull"||sp==="legs";
+  if(day==="cardio") return isCardio(kind);
+  return sp===day;
+}
 function fillPick(){
   var q=Q.value.trim().toLowerCase();
   var idx=exerciseIndex(), t=editable(), split=t?t.split:"push";
   var mine=Array.from(idx.values()).filter(function(e){return e.name.toLowerCase().indexOf(q)>=0;})
     .sort(function(a,b){
-      var ap=(a.split===split)||(split==="cardio"&&isCardio(a.kind));
-      var bp=(b.split===split)||(split==="cardio"&&isCardio(b.kind));
+      var ap=fitsDay(a.split,split,a.kind);
+      var bp=fitsDay(b.split,split,b.kind);
       return (bp?1:0)-(ap?1:0) || b.last.localeCompare(a.last);});
   var known={}; idx.forEach(function(v,k){known[k.toLowerCase()]=1;});
 
@@ -1817,7 +2050,8 @@ function fillPick(){
       return !known[n.toLowerCase()] && n.toLowerCase().indexOf(q)>=0;})};})
     .filter(function(g){return g.items.length;});
   /* the day you're on floats to the top */
-  groups.sort(function(a,b){return (b.split===split?1:0)-(a.split===split?1:0);});
+  groups.sort(function(a,b){return (fitsDay(b.split,split,"lift")?1:0)-
+    (fitsDay(a.split,split,"lift")?1:0);});
   var cardio=CARDIO_LIB.filter(function(c){
     return !known[c.name.toLowerCase()] && c.name.toLowerCase().indexOf(q)>=0;});
 
@@ -1825,21 +2059,25 @@ function fillPick(){
   var exact = !!known[q] || allLib.concat(cardio.map(function(c){return c.name;}))
     .some(function(n){return n.toLowerCase()===q;});
 
-  var h="";
+  var h="", addHTML="";
   if(q && !exact){
     var n=Q.value.trim();
     var choices=["push","pull","legs","other"]
       .sort(function(a,b){return (b===split?1:0)-(a===split?1:0);})
       .map(function(sp){return newItem(n,"lift",sp,SPLIT_NAME[sp],"reps &times; weight");});
+    choices.push(newItem(n,"hold","other","Timed hold","seconds + optional weight"));
     choices.push(newItem(n,"machine","cardio","Cardio","time + level"));
-    h+='<div class="grouphead eyebrow">Add &ldquo;'+esc(n)+'&rdquo; as</div>'+choices.join("");
+    addHTML='<div class="grouphead eyebrow">Add &ldquo;'+esc(n)+'&rdquo; as</div>'+choices.join("");
   }
   if(mine.length) h+='<div class="grouphead eyebrow">You&rsquo;ve logged these</div>'+
     mine.map(function(e){
       var meta = isCardio(e.kind)
         ? ago(e.last)+" · "+minutes(historyOf(e.name)[0].sets)+" min"
+        : e.kind==="hold"
+        ? ago(e.last)+" · "+holdTime(seconds(historyOf(e.name)[0].sets))
         : ago(e.last)+" · top "+fmt(heaviest(historyOf(e.name)[0].sets)[1])+" lb";
       return item(e,meta);}).join("");
+  h+=addHTML;
   var cardioHTML = cardio.length
     ? '<div class="grouphead eyebrow">Cardio machines</div>'+cardio.map(function(c){
         return item({name:c.name,split:"cardio",kind:c.kind},
@@ -1847,7 +2085,7 @@ function fillPick(){
     : "";
   var liftHTML = groups.map(function(g){
     return '<div class="grouphead eyebrow">'+GROUP_LABEL[g.split]+'</div>'+
-      g.items.map(function(n){return item({name:n,split:g.split,kind:"lift"},"");}).join("");}).join("");
+      g.items.map(function(n){return item({name:n,split:g.split,kind:LIB_KIND[n]||"lift"},"");}).join("");}).join("");
   /* on a cardio day the machines lead, otherwise the day's own lifts do */
   h += split==="cardio" ? cardioHTML+liftHTML : liftHTML+cardioHTML;
   if(!h) h='<div class="empty">Type a name to add it.</div>';
@@ -1874,17 +2112,28 @@ function pick(n,k,sp){
     s.ex.push({name:n,kind:kind,split:split,sets:[],draft:d});
   }
   closeSheet(); save(); render();
+  var at=s.ex.map(function(x){return x.name;}).indexOf(n); if(at>=0) revealEntry(at);
   setTimeout(function(){var sc=document.querySelector(".scroll");
     if(sc)sc.scrollTo({top:1e6,behavior:"smooth"});},60);
 }
 function defaultDraft(kind){
   if(kind==="lift") return [8,0];
+  if(kind==="hold") return [30,0];
   if(kind==="machine") return [20,5];
   return [20,3.5,2];
 }
 
 render();
 syncBoot();
+/* Android can restore the signed-out page from its back/forward cache after a
+   login round trip. A persisted page is a snapshot, not current auth truth:
+   signed-in snapshots return to Home, and signed-out snapshots ask /api/me
+   again instead of exposing the stale door. */
+function returnFromHistory(e){
+  if(!e||!e.persisted) return;
+  if(SY.user){ openThread=null; goHome(); sync(); return; }
+  API=null; render(); syncBoot();
+}
 /* Two moments are worth a sync nobody asked for: coming back to the app, and
    coming back onto the network. Everything else already syncs through save().
    There is no Sync now button -- a button that does what the app does on a
@@ -1900,4 +2149,6 @@ if(typeof document.addEventListener==="function")
     if(!document.hidden) sync(); });
 if(typeof addEventListener==="function")
   addEventListener("online",function(){ syncMsg=""; sync(); });
+if(typeof addEventListener==="function")
+  addEventListener("pageshow",returnFromHistory);
 </script>

@@ -12,7 +12,7 @@
 import APP_HTML from "../rack-log.html";
 import ICON192 from "./icon-192.png";
 import ICON512 from "./icon-512.png";
-import SPLASH from "./splash.jpg";
+import { buildPushPayload } from "@block65/webcrypto-web-push";
 
 const COOKIE = "rl";
 /* 48 hours, Mark's call. Long enough to survive a family text going unread
@@ -25,6 +25,7 @@ const SESSION_MS = 90 * 86400 * 1000;
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_BODY = 256 * 1024;
+const LIKE_PUSH_COOLDOWN = 15 * 60 * 1000;
 
 /* Usernames are what you type to sign in and what search matches on, so they
    are narrow on purpose: lowercase, and nothing that has to be escaped or
@@ -78,6 +79,29 @@ const HEAD = [
   '<meta name="apple-mobile-web-app-title" content="Rack Log">',
   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
 ].join("");
+
+const SERVICE_WORKER = `
+self.addEventListener("push", function(event) {
+  if (!event.data) return;
+  var data = event.data.json();
+  event.waitUntil(self.registration.showNotification(data.title || "Rack Log", {
+    body: data.body || "", icon: "/icon-192.png", badge: "/icon-192.png",
+    tag: data.tag || "racklog", data: { url: data.url || "/" }
+  }));
+});
+self.addEventListener("notificationclick", function(event) {
+  event.notification.close();
+  var url = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then(function(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].url.indexOf(self.location.origin) === 0) {
+        if ("navigate" in list[i]) list[i].navigate(url);
+        return list[i].focus();
+      }
+    }
+    return clients.openWindow(url);
+  }));
+});`;
 
 /* built once at module scope, not per request */
 const PAGE = '<!doctype html><html lang="en">' +
@@ -826,7 +850,10 @@ async function feed(env, user) {
   }
   for (const id of need) if (!people[id]) people[id] = { name: id, initials: "?" };
 
-  return json({ now: Date.now(), items, social, people, crew, counts });
+  const unreadRow = await env.DB.prepare(
+    "SELECT COUNT(*) n FROM notifications WHERE user_id=? AND unread=1").bind(user.id).first();
+  return json({ now: Date.now(), items, social, people, crew, counts,
+    unread: Number((unreadRow && unreadRow.n) || 0) });
 }
 
 /* One like or one comment. The only write in the app that lands on somebody
@@ -834,7 +861,108 @@ async function feed(env, user) {
    to: that the target is a real, still-shared session, and that `user_id`
    comes from the cookie rather than the body. */
 const MAX_COMMENT = 500;
-async function socialWrite(req, env, user) {
+async function pushSubscription(req, env, user, method) {
+  const b = await readJSON(req);
+  const sub = b && b.subscription;
+  const endpoint = String((sub && sub.endpoint) || (b && b.endpoint) || "");
+  if (!endpoint || endpoint.length > 2000) return json({ error: "Bad subscription." }, 400);
+  let endpointUrl;
+  try { endpointUrl = new URL(endpoint); } catch (_) { return json({ error: "Bad subscription." }, 400); }
+  if (endpointUrl.protocol !== "https:") return json({ error: "Bad subscription." }, 400);
+
+  if (method === "DELETE") {
+    await env.DB.prepare("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?")
+      .bind(user.id, endpoint).run();
+    return json({ enabled: false });
+  }
+
+  const keys = sub && sub.keys;
+  const p256dh = String((keys && keys.p256dh) || "");
+  const auth = String((keys && keys.auth) || "");
+  if (!p256dh || p256dh.length > 200 || !auth || auth.length > 100)
+    return json({ error: "Bad subscription." }, 400);
+  const id = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(endpoint))));
+  const now = Date.now();
+  await env.DB.prepare(
+    "INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created, updated) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET " +
+    "user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth, updated=excluded.updated"
+  ).bind(id, user.id, endpoint, p256dh, auth, now, now).run();
+  return json({ enabled: true });
+}
+
+async function notifyWorkoutOwner(env, owner, item, kind, actor, comment) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || owner === actor) return;
+  const now = Date.now();
+  if (kind === "like") {
+    const prior = await env.DB.prepare(
+      "SELECT last_sent FROM push_throttle WHERE user_id=? AND item_id=? AND kind='like'"
+    ).bind(owner, item).first();
+    if (prior && now - prior.last_sent < LIKE_PUSH_COOLDOWN) return;
+    await env.DB.prepare(
+      "INSERT INTO push_throttle (user_id,item_id,kind,last_sent) VALUES (?,?,'like',?) " +
+      "ON CONFLICT(user_id,item_id,kind) DO UPDATE SET last_sent=excluded.last_sent"
+    ).bind(owner, item, now).run();
+  }
+
+  const [person, count, rows] = await Promise.all([
+    env.DB.prepare("SELECT display FROM users WHERE id=?").bind(actor).first(),
+    kind === "like" ? env.DB.prepare(
+      "SELECT COUNT(*) n FROM social WHERE item_id=? AND kind='like'"
+    ).bind(item).first() : Promise.resolve(null),
+    env.DB.prepare(
+      "SELECT id,endpoint,p256dh,auth FROM push_subscriptions WHERE user_id=?"
+    ).bind(owner).all()
+  ]);
+  const name = (person && person.display) || "Someone";
+  const n = count ? Number(count.n || 1) : 0;
+  const data = JSON.stringify(kind === "like" ? {
+    title: "Rack Log", body: n > 1 ? n + " people liked your workout" : name + " liked your workout",
+    tag: "racklog-like-" + item, url: "/"
+  } : {
+    title: name + " commented", body: String(comment || "").slice(0, 140),
+    tag: "racklog-comment-" + crypto.randomUUID(), url: "/"
+  });
+  const vapid = { subject: env.VAPID_SUBJECT || "https://racklog.millerboyz.workers.dev/",
+    publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
+
+  await Promise.allSettled((rows.results || []).map(async (r) => {
+    try {
+      const request = await buildPushPayload(
+        { data, options: { ttl: 86400 } },
+        { endpoint: r.endpoint, expirationTime: null, keys: { p256dh: r.p256dh, auth: r.auth } },
+        vapid
+      );
+      const response = await fetch(r.endpoint, request);
+      if (response.status === 404 || response.status === 410)
+        await env.DB.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(r.id).run();
+    } catch (e) { console.error("push error", e && e.stack ? e.stack : String(e)); }
+  }));
+}
+
+async function notificationsList(env, user) {
+  const [rows, unread] = await Promise.all([
+    env.DB.prepare(
+      "SELECT n.id,n.item_id,n.kind,n.body,n.workout_date,n.workout_split,n.created,n.unread," +
+      "u.display actor_name,u.initials actor_initials FROM notifications n " +
+      "JOIN users u ON u.id=n.actor_id WHERE n.user_id=? ORDER BY n.created DESC LIMIT 100"
+    ).bind(user.id).all(),
+    env.DB.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id=? AND unread=1")
+      .bind(user.id).first()
+  ]);
+  return json({ items: rows.results || [], unread: Number((unread && unread.n) || 0) });
+}
+
+async function notificationAdd(env, owner, actor, item, kind, body, target, now, sourceId) {
+  if (owner === actor) return;
+  const id = kind === "like" ? owner + "|" + actor + "|" + item + "|like" : sourceId;
+  await env.DB.prepare(
+    "INSERT INTO notifications (id,user_id,actor_id,item_id,kind,body,workout_date,workout_split,created,unread) " +
+    "VALUES (?,?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET created=excluded.created,unread=1"
+  ).bind(id, owner, actor, item, kind, body || "", target.date, target.split, now).run();
+}
+
+async function socialWrite(req, env, user, ctx) {
   const b = await readJSON(req);
   const item = String((b && b.item) || "");
   const kind = String((b && b.kind) || "");
@@ -845,7 +973,7 @@ async function socialWrite(req, env, user) {
      the feed is what the page can SEE, this is what it can WRITE, and a
      crafted request never went through the feed at all. */
   const target = await env.DB.prepare(
-    "SELECT 1 FROM sessions s WHERE s.user_id = ? AND s.id = ? " +
+    "SELECT s.split,s.date FROM sessions s WHERE s.user_id = ? AND s.id = ? " +
     "AND s.shared = 1 AND s.deleted = 0 AND " + VISIBLE
   ).bind(item.slice(0, cut), item.slice(cut + 1), user.id, user.id).first();
   if (!target) return json({ error: "That workout isn’t shared with you." }, 404);
@@ -853,23 +981,35 @@ async function socialWrite(req, env, user) {
   const now = Date.now();
 
   if (kind === "like") {
-    /* derived id: a double tap can never leave two rows behind */
+    /* Explicit desired state, not a toggle. A repeated request, retry, or
+       impatient double tap must be idempotent instead of turning itself off. */
     const id = user.id + "|" + item + "|like";
-    const del = await env.DB.prepare("DELETE FROM social WHERE id = ?").bind(id).run();
-    const off = !!(del.meta && del.meta.changes);
-    if (!off)
-      await env.DB.prepare(
-        "INSERT INTO social (id, item_id, user_id, kind, body, created) VALUES (?, ?, ?, 'like', '', ?)"
+    const on = b.on !== false;
+    if (on)
+      {
+      const result = await env.DB.prepare(
+        "INSERT INTO social (id, item_id, user_id, kind, body, created) " +
+        "VALUES (?, ?, ?, 'like', '', ?) ON CONFLICT(id) DO NOTHING"
       ).bind(id, item, user.id, now).run();
-    return json({ item, kind: "like", on: !off });
+      if (!result.meta || result.meta.changes) {
+        await notificationAdd(env, item.slice(0, cut), user.id, item, "like", "", target, now, id);
+        ctx.waitUntil(notifyWorkoutOwner(env, item.slice(0, cut), item, "like", user.id, ""));
+      }
+      }
+    else
+      await env.DB.prepare("DELETE FROM social WHERE id = ?").bind(id).run();
+    return json({ item, kind: "like", on });
   }
 
   if (kind === "comment") {
     const text = String((b && b.text) || "").trim().slice(0, MAX_COMMENT);
     if (!text) return json({ error: "Say something first." }, 400);
+    const commentId = hex(crypto.getRandomValues(new Uint8Array(16)));
     await env.DB.prepare(
       "INSERT INTO social (id, item_id, user_id, kind, body, created) VALUES (?, ?, ?, 'comment', ?, ?)"
-    ).bind(hex(crypto.getRandomValues(new Uint8Array(16))), item, user.id, text, now).run();
+    ).bind(commentId, item, user.id, text, now).run();
+    await notificationAdd(env, item.slice(0, cut), user.id, item, "comment", text, target, now, commentId);
+    ctx.waitUntil(notifyWorkoutOwner(env, item.slice(0, cut), item, "comment", user.id, text));
     return json({ item, kind: "comment", text });
   }
 
@@ -887,7 +1027,7 @@ async function remove(env, user, id) {
 }
 
 /* ---------- routing ---------- */
-async function api(req, env, url) {
+async function api(req, env, url, ctx) {
   const path = url.pathname.slice(5);
   const method = req.method;
 
@@ -938,7 +1078,17 @@ async function api(req, env, url) {
 
   if (path === "sessions" && method === "GET") return pull(env, user, url);
   if (path === "feed" && method === "GET") return feed(env, user);
-  if (path === "social" && method === "POST") return socialWrite(req, env, user);
+  if (path === "notifications" && method === "GET") return notificationsList(env, user);
+  if (path === "notifications/read" && method === "POST") {
+    await env.DB.prepare("UPDATE notifications SET unread=0 WHERE user_id=? AND unread=1")
+      .bind(user.id).run();
+    return json({ unread: 0 });
+  }
+  if (path === "push" && (method === "POST" || method === "DELETE"))
+    return pushSubscription(req, env, user, method);
+  if (path === "push" && method === "GET")
+    return json({ publicKey: env.VAPID_PUBLIC_KEY || "" });
+  if (path === "social" && method === "POST") return socialWrite(req, env, user, ctx);
 
   if (path.startsWith("sessions/")) {
     const id = decodeURIComponent(path.slice(9));
@@ -955,13 +1105,13 @@ function asset(body, type, cache) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
 
     if (p.startsWith("/api/")) {
       try {
-        return await api(req, env, url);
+        return await api(req, env, url, ctx);
       } catch (e) {
         /* never leak a SQL message to the client; the real one is in the tail */
         console.error("api error", p, e && e.stack ? e.stack : String(e));
@@ -973,7 +1123,7 @@ export default {
       return asset(MANIFEST, "application/manifest+json", "public, max-age=3600");
     if (p === "/icon-192.png") return asset(ICON192, "image/png", "public, max-age=604800");
     if (p === "/icon-512.png") return asset(ICON512, "image/png", "public, max-age=604800");
-    if (p === "/splash.jpg") return asset(SPLASH, "image/jpeg", "public, max-age=604800");
+    if (p === "/sw.js") return asset(SERVICE_WORKER, "application/javascript; charset=utf-8", "no-cache");
 
     /* no-cache, not no-store: the browser may keep it, but must revalidate, so
        a deploy reaches everyone's home-screen app on the next launch */

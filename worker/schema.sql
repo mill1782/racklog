@@ -126,3 +126,42 @@ CREATE TABLE IF NOT EXISTS follows (
 );
 -- "who follows me" -- the count on the profile screen, and nothing else yet.
 CREATE INDEX IF NOT EXISTS follows_by_followee ON follows(followee);
+
+-- One row per opted-in browser/device. The endpoint and keys are capabilities
+-- supplied by that browser's push service and are never returned to clients.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id       TEXT PRIMARY KEY,
+  user_id  TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh   TEXT NOT NULL,
+  auth     TEXT NOT NULL,
+  created  INTEGER NOT NULL,
+  updated  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_by_user ON push_subscriptions(user_id);
+
+-- Likes can come in bursts. At most one alert per workout every 15 minutes;
+-- the social rows themselves are unaffected and all likes still appear.
+CREATE TABLE IF NOT EXISTS push_throttle (
+  user_id  TEXT NOT NULL,
+  item_id  TEXT NOT NULL,
+  kind     TEXT NOT NULL,
+  last_sent INTEGER NOT NULL,
+  PRIMARY KEY (user_id, item_id, kind)
+);
+
+-- Persistent activity inbox. Unlike push subscriptions, this follows the
+-- account across devices and remains useful when Android alerts are off.
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  workout_date TEXT NOT NULL,
+  workout_split TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  unread INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS notifications_by_user ON notifications(user_id, created DESC);

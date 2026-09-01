@@ -7,7 +7,7 @@ account_id = "2f2569917e53a95a5f8776e9879eaf64"
 # assets directory to keep in sync and still no build step. HTML is a Text
 # module by default; PNG needs saying, and fallthrough keeps the defaults.
 rules = [
-  { type = "Data", globs = ["**/*.png", "**/*.jpg"], fallthrough = true }
+  { type = "Data", globs = ["**/*.png"], fallthrough = true }
 ]
 
 # Google sign-in. The client id is public and belongs in the repo; the secret
@@ -17,6 +17,8 @@ rules = [
 # and the worker never offers Google at all; PIN login is unaffected.
 [vars]
 GOOGLE_CLIENT_ID = "255233140114-q3qn3kfurjvrjjsosl79p4pgmgt7neku.apps.googleusercontent.com"
+VAPID_PUBLIC_KEY = "BOf4QYdJOiLwZi0V52oVCR_hpPx5N-K0XNSpfzD1yVwCKniPFLN4KEcyImynlHKiWVI6Qt8q7KH0XgoY2KK-3f8"
+VAPID_SUBJECT = "https://racklog.millerboyz.workers.dev/"
 
 [observability]
 enabled = true

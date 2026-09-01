@@ -17,6 +17,7 @@ const vm = require("vm");
 
 const file = path.join(__dirname, "..", "rack-log.html");
 const html = fs.readFileSync(file, "utf8");
+const workerSource = fs.readFileSync(path.join(__dirname, "..", "worker", "index.js"), "utf8");
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) { console.error("No <script> block found in " + file); process.exit(1); }
 
@@ -129,6 +130,10 @@ const screen = () =>
   viewHTML().indexOf("livehead") >= 0 ? "session" : "exercise";
 
 /* ---- 1. seed data mirrors the spreadsheet ---- */
+group("Push subscriptions");
+ok("the subscription digest is converted from an ArrayBuffer before hex encoding",
+   workerSource.indexOf('hex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(endpoint))))') >= 0);
+
 group("Seed data (from 'Untitled spreadsheet.xlsx')");
 ok("a new device starts with no workouts at all", startedEmpty);
 ok("and with no likes or comments invented", startedUnshared);
@@ -152,6 +157,10 @@ sandbox.document.getElementById("f0_1").value = 185;
 sandbox.addSet(0);
 ok("beating a past best flags PR", viewHTML().indexOf(">PR<") >= 0);
 eq("draft carries to the next set", JSON.stringify(S().live.ex[0].draft), "[8,185]");
+ok("tapping a workout value selects the whole number",
+   viewHTML().indexOf('onfocus="this.select()" onclick="this.select()"') >= 0);
+ok("logging controls stay above the growing set list",
+   viewHTML().indexOf('id="entry0"') < viewHTML().indexOf('class="sets"'));
 sandbox.pick("Leg Press", "lift", "legs");   /* left empty on purpose */
 sandbox.finish();
 eq("finished session is stored", S().sessions.length, 6);
@@ -186,27 +195,63 @@ ok("lifting keeps the line chart", viewHTML().indexOf('class="ser"') >= 0 ||
    viewHTML().indexOf('class="pt"') >= 0);
 ok("lifting stats", viewHTML().indexOf("Best est. 1RM") >= 0);
 
+/* ---- timed holds: duration, with optional added weight ---- */
+group("Timed holds");
+sandbox.startWorkout(); sandbox.setSplit("other"); sandbox.pick("Plank", "hold", "other");
+eq("planks use the timed-hold fields", sandbox.kindOf(S().live.ex[0]), "hold");
+eq("timed holds have seconds and optional weight", sandbox.KINDS.hold.fields.length, 2);
+sandbox.document.getElementById("f0_0").value = 45;
+sandbox.document.getElementById("f0_1").value = "";
+sandbox.addSet(0);
+sandbox.document.getElementById("f0_0").value = 30;
+sandbox.document.getElementById("f0_1").value = 25;
+sandbox.addSet(0);
+eq("a bodyweight and weighted plank are both stored",
+   JSON.stringify(S().live.ex[0].sets), "[[45,0],[30,25]]");
+ok("the optional weight only appears when used",
+   viewHTML().indexOf("45<em>sec</em>") >= 0 &&
+   viewHTML().indexOf("30<em>sec</em>25<em>lb</em>") >= 0);
+sandbox.finish(); sandbox.openExercise("Plank");
+ok("planks get time history instead of a 1RM chart",
+   viewHTML().indexOf("Seconds per session") >= 0 &&
+   viewHTML().indexOf("Best est. 1RM") < 0);
+
 /* ---- 4. calendar ---- */
 group("Calendar");
 sandbox.goHome();
 ok("month grid renders", viewHTML().indexOf("calgrid") >= 0);
 ok("labelled August 2026", viewHTML().indexOf("August 2026") >= 0);
 ok("a dot per session", (viewHTML().match(/<i data-split=/g) || []).length >= 5);
-ok("next month disabled (it is the future)", /setMonth\(1\)" disabled/.test(viewHTML()));
-sandbox.setMonth(-1);
-ok("empty month says so", viewHTML().indexOf("Nothing logged in July 2026") >= 0);
-sandbox.setMonth(1);
+ok("months form one continuous stream", (viewHTML().match(/class="calmonth"/g) || []).length >= 12);
+ok("month headings open the jump picker", viewHTML().indexOf("openMonthPicker('2026-08')") >= 0);
+sandbox.openMonthPicker("2026-08");
+ok("picker offers month choices", els.dialog.innerHTML.indexOf("August") >= 0);
+ok("future months are disabled", /disabled[^>]*>October<\/button>/.test(els.dialog.innerHTML));
+sandbox.closeDialog();
 
 /* ---- 5. classification ---- */
 group("Exercise classification");
 const lib = Object.keys(sandbox.EXTRA).reduce((a, k) => a.concat(sandbox.EXTRA[k]), []);
 ok("library is classified and duplicate-free", new Set(lib).size === lib.length);
 ok("library never repeats a logged exercise", lib.filter(n => names.has(n)).length === 0);
+ok("Upper, Lower, and Full Body are workout categories",
+   ["upper","lower","full"].every(k => sandbox.SPLITS.some(p => p[0] === k)));
+ok("the default library names the missing dumbbell variants",
+   ["Dumbbell Squat","Dumbbell Romanian Deadlift","Dumbbell Lunge",
+    "One-Arm Dumbbell Row","Dumbbell Fly","Farmer Carry","Dumbbell Thruster"]
+     .every(n => lib.includes(n)));
 sandbox.startWorkout(); sandbox.setSplit("pull");
+sandbox.setSplit("full");
+ok("Full Body renders as a workout day", viewHTML().indexOf("Full Body day") >= 0);
+sandbox.setSplit("pull");
+sandbox.document.getElementById("q").value = "Squ";
+sandbox.fillPick();
+ok("logged exercise matches appear before add-exercise choices",
+   pickHTML().indexOf("You&rsquo;ve logged these") < pickHTML().indexOf("Add &ldquo;Squ&rdquo; as"));
 sandbox.document.getElementById("q").value = "Sled Push";
 sandbox.fillPick();
-eq("a new name offers 5 classifications",
-   (pickHTML().match(/pick\('Sled Push'/g) || []).length, 5);
+eq("a new name offers lift classifications and a timed hold",
+   (pickHTML().match(/pick\('Sled Push'/g) || []).length, 6);
 sandbox.pick("Sled Push", "lift", "legs");
 eq("chosen classification is stored, not the day's", S().live.ex[0].split, "legs");
 ok("card wears its own classification",
@@ -537,12 +582,13 @@ eq("ago() calls today today", sandbox.ago(sandbox.today()), "today");
 sandbox.startWorkout();
 eq("a workout started now is dated today", S().live.date, sandbox.today());
 sandbox.askCancel(); sandbox.dialogYes();
-/* the calendar must never page past the current month */
-sandbox.setMonth(0);
+/* the calendar picker must never jump past the current month */
 S().month = sandbox.today().slice(0, 7);
 sandbox.render();
-ok("the calendar can't page into the future",
-   viewHTML().indexOf('onclick="setMonth(1)" disabled') >= 0);
+sandbox.openMonthPicker(S().month);
+ok("the calendar can't jump into the future",
+   (els.dialog.innerHTML.match(/ disabled/g) || []).length >= 12-(+sandbox.today().slice(5,7)));
+sandbox.closeDialog();
 
 /* ---- 10. the profile screen ---- */
 group("Profile");
@@ -555,6 +601,9 @@ ok("import is gone", viewHTML().indexOf("importblob") < 0 &&
    viewHTML().indexOf("askImport") < 0);
 ok("it says what you have logged", viewHTML().indexOf("finished session") >= 0);
 ok("sync still lives here", viewHTML().indexOf("Sync") >= 0);
+ok("automatic sharing is on by default",
+   viewHTML().indexOf("Automatically share new workouts") >= 0 &&
+   viewHTML().indexOf('aria-pressed="true"') >= 0);
 ok("and there is a way back", viewHTML().indexOf('onclick="goBack()"') >= 0);
 
 /* The import test used to leave exactly one session behind, and the sync
@@ -573,7 +622,7 @@ sandbox.goHome();
 function fakeServer() {
   const api = {
     rows: new Map(), clock: 1000, puts: 0, dels: 0, unauthorized: false,
-    feed: [], social: {}, people: {}, crew: [], posts: [],
+    feed: [], social: {}, people: {}, crew: [], posts: [], notifications: [],
     /* invites. Codes here are 32 digits rather than 32 hex characters --
        digits are hex, and it keeps them readable in a failure message. */
     invites: [], joins: 0, codes: 0, passwords: 0, followWrites: 0,
@@ -626,8 +675,15 @@ function fakeServer() {
       else if (p === "/api/feed")
         out = { now: ++api.clock, items: api.feed, social: api.social,
                 people: api.people, crew: api.crew,
+                unread: api.notifications.filter(n => n.unread).length,
                 counts: { following: Math.max(0, api.crew.length - 1),
                           followers: [...api.follows].filter(k => k.endsWith(">" + api.me)).length } };
+      else if (p === "/api/notifications" && method === "GET")
+        out = { items: api.notifications,
+                unread: api.notifications.filter(n => n.unread).length };
+      else if (p === "/api/notifications/read" && method === "POST") {
+        api.notifications.forEach(n => { n.unread = 0; }); out = { unread: 0 };
+      }
       else if (p === "/api/login" && method === "POST") {
         const u = api.users.find(x => x.username === String((body && body.username) || ""));
         if (!u || u.password !== String((body && body.password) || "")) {
@@ -843,9 +899,9 @@ function fakeServer() {
   group("The door");
   sandbox.API = null;
   sandbox.render();
-  ok("before the server answers, only the branded splash",
-     viewHTML().indexOf('class="splash"') >= 0 &&
-     viewHTML().indexOf('src="/splash.jpg"') >= 0);
+  ok("before the server answers, only a plain loading background",
+     viewHTML().indexOf('class="bootscreen"') >= 0 &&
+     viewHTML().indexOf('splash.jpg') < 0);
   eq("and no bottom nav to tap", barHTML(), "");
 
   sandbox.API = true;
@@ -970,14 +1026,18 @@ function fakeServer() {
   eq("a like is posted to the server", crew.posts.length, 1);
   eq("on the right item", crew.posts[0].item, "danny:f1");
   eq("as a like", crew.posts[0].kind, "like");
+  eq("with an explicit saved state", crew.posts[0].on, true);
   ok("and never carries who — the server reads that off the cookie",
      crew.posts[0].who === undefined);
   ok("it shows immediately, before the round trip", sandbox.liked("danny:f1"));
+  sandbox.toggleLike("danny:f1");
+  eq("unliking posts an explicit removed state", crew.posts[1].on, false);
+  sandbox.toggleLike("danny:f1");
   sandbox.document.getElementById("c_danny:f1").value = "Spot me next time";
   sandbox.addComment("danny:f1");
-  eq("a comment is posted too", crew.posts[1].kind, "comment");
-  eq("with its text", crew.posts[1].text, "Spot me next time");
-  eq("and nothing else", crew.posts[1].who, undefined);
+  eq("a comment is posted too", crew.posts[3].kind, "comment");
+  eq("with its text", crew.posts[3].text, "Spot me next time");
+  eq("and nothing else", crew.posts[3].who, undefined);
 
   /* the server is the truth: a pull replaces whatever the tap did locally */
   crew.social = {};
@@ -1001,6 +1061,19 @@ function fakeServer() {
   ok("the session says so", viewHTML().indexOf("Shared") >= 0);
   sandbox.toggleShare();
   ok("and one tap opts back out", fresh.shared === undefined);
+  sandbox.openData();
+  sandbox.toggleAutoShare();
+  ok("a user can disable automatic sharing",
+     S().autoShare === false && viewHTML().indexOf('aria-pressed="false"') >= 0);
+  sandbox.startWorkout();
+  sandbox.pick("Squat", "lift", "legs");
+  sandbox.document.getElementById("f0_0").value = 5;
+  sandbox.document.getElementById("f0_1").value = 185;
+  sandbox.addSet(0);
+  sandbox.finish();
+  const privateFresh = S().sessions[S().sessions.length - 1];
+  ok("new workouts stay private after it is disabled", privateFresh.shared === undefined);
+  sandbox.toggleAutoShare();
   ok("an empty workout is still no workout at all",
      (sandbox.startWorkout(), sandbox.finish(), S().sessions.indexOf(S().live) < 0));
 
@@ -1012,9 +1085,21 @@ function fakeServer() {
      viewHTML().indexOf('class="userbtn"') >= 0 && viewHTML().indexOf(">Data<") < 0);
   ok("with your initials and your first name",
      viewHTML().indexOf(">MM<") >= 0 && viewHTML().indexOf(">Mark<") >= 0);
-  ok("and it still opens the data screen", viewHTML().indexOf('onclick="openData()"') >= 0);
+  ok("and it opens the notifications inbox", viewHTML().indexOf('onclick="openNotifications()"') >= 0);
   ok("you are ink, never a split colour",
      viewHTML().indexOf('class="who" data-person="me"') >= 0);
+  crew.notifications = [{ id:"n1", item_id:"danny:f1", kind:"comment", body:"Strong work",
+    workout_date:"2026-08-28", workout_split:"pull", created:Date.now(), unread:1,
+    actor_name:"Danny Ruiz", actor_initials:"DR" }];
+  sandbox.SY.unread = 1; sandbox.render();
+  ok("unread activity puts a counter on the user icon", viewHTML().indexOf('class="notifybadge">1<') >= 0);
+  sandbox.openNotifications();
+  await new Promise((r) => process.nextTick(r));
+  ok("the inbox names who commented and what they said",
+     viewHTML().indexOf("Danny Ruiz") >= 0 && viewHTML().indexOf("Strong work") >= 0);
+  ok("the inbox identifies the workout", viewHTML().indexOf("Pull workout") >= 0);
+  eq("opening the inbox clears the unread counter", sandbox.SY.unread, 0);
+  sandbox.goHome();
 
   /* ---- 18. no History button, and the way back ---- */
   group("The way back");
@@ -1143,6 +1228,13 @@ function fakeServer() {
   for (let i = 0; i < 100 && sandbox.syncing; i++) await new Promise((r) => setTimeout(r, 0));
   ok("what was logged offline reaches the server", back.rows.has("offline1"));
   eq("and nothing is left waiting", sandbox.dirtyOps().length, 0);
+
+  const pageshow = (winListeners.pageshow || [])[0];
+  ok("the app listens for Android restoring an old page", typeof pageshow === "function");
+  sandbox.view = { name: "data" };
+  pageshow({ persisted: true });
+  eq("Android Back returns a signed-in person to Home", sandbox.view.name, "home");
+  ok("and keeps the signed-in account", sandbox.SY.user && sandbox.SY.user.id === "me");
 
   /* ---- 23. joining by an invite link ----
    * The code arrives on the URL, because the link gets texted to somebody.
