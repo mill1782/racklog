@@ -218,16 +218,24 @@ ok("planks get time history instead of a 1RM chart",
 
 /* ---- 4. calendar ---- */
 group("Calendar");
+S().month = "2026-08";
 sandbox.goHome();
 ok("month grid renders", viewHTML().indexOf("calgrid") >= 0);
 ok("labelled August 2026", viewHTML().indexOf("August 2026") >= 0);
 ok("a dot per session", (viewHTML().match(/<i data-split=/g) || []).length >= 5);
-ok("months form one continuous stream", (viewHTML().match(/class="calmonth"/g) || []).length >= 12);
+eq("only one calendar viewport renders", (viewHTML().match(/class="calviewport"/g) || []).length, 1);
+eq("the viewport always contains six complete weeks",
+   (viewHTML().match(/class="cell(?: [^"]*)?"/g) || []).length, 42);
+ok("overlapping weeks show adjacent-month days", viewHTML().indexOf('class="cell out') >= 0);
 ok("month headings open the jump picker", viewHTML().indexOf("openMonthPicker('2026-08')") >= 0);
 sandbox.openMonthPicker("2026-08");
 ok("picker offers month choices", els.dialog.innerHTML.indexOf("August") >= 0);
 ok("future months are disabled", /disabled[^>]*>October<\/button>/.test(els.dialog.innerHTML));
 sandbox.closeDialog();
+sandbox.calendarTouchStart({touches:[{clientX:300,clientY:100}]});
+sandbox.calendarTouchEnd({changedTouches:[{clientX:100,clientY:105}]});
+eq("swiping left advances one month", S().month, "2026-09");
+sandbox.setMonth(-1);
 
 /* ---- 5. classification ---- */
 group("Exercise classification");

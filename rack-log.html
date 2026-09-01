@@ -355,9 +355,7 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 
 .calwrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 12px 10px;margin-bottom:12px}
-.calmonth{scroll-margin-top:8px;margin-bottom:18px}
-.calmonthhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;
-  justify-content:space-between;background:var(--bg);padding:7px 0}
+.calmonthhead{display:flex;align-items:center;justify-content:space-between;padding:2px 0 9px}
 .calmonthhead button{display:flex;align-items:center;gap:7px;padding:7px 2px;
   font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;
   text-transform:uppercase;letter-spacing:.04em}
@@ -365,6 +363,7 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 .calmonthhead .jumpmark{font-size:10px;color:var(--ink-3)}
 .calmonthhead .current{font-family:"Barlow Condensed",sans-serif;font-weight:600;
   font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}
+.calviewport{touch-action:pan-y;user-select:none}
 .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .caldow{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
   letter-spacing:.1em;color:var(--ink-3);text-align:center;padding-bottom:2px}
@@ -372,6 +371,8 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
   justify-content:center;gap:4px;font-family:"JetBrains Mono",monospace;font-size:12px;
   color:var(--ink-3);padding:0}
 .cell.pad{visibility:hidden}
+.cell.out{color:color-mix(in srgb,var(--ink-3) 55%,transparent)}
+.cell.out.on{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
 .cell.on{background:var(--surface-2);color:var(--ink);font-weight:700}
 .cell.today{box-shadow:inset 0 0 0 1.5px var(--line-2)}
 .cell.live{box-shadow:inset 0 0 0 1.5px var(--accent)}
@@ -1006,16 +1007,17 @@ function renderView(){
 }
 function scroll(html){return '<div class="scroll">'+html+'</div>';}
 
-/* One month in the continuous calendar: one cell per day, with a coloured
-   dot per session. The heading is both sticky and the fast way to jump. */
+/* One six-week calendar viewport. Days from the neighbouring months stay in
+   the overlapping weeks, so swiping never produces a broken-looking edge. */
 function calendarMonth(m){
-  var n=daysIn(m), start=firstDow(m), byDay={}, i, td=today();
-  inMonth(m).forEach(function(s){ (byDay[s.date]=byDay[s.date]||[]).push(s); });
+  var start=firstDow(m), byDay={}, i, td=today(), y=+m.slice(0,4), mo=+m.slice(5,7)-1;
+  S.sessions.forEach(function(s){ (byDay[s.date]=byDay[s.date]||[]).push(s); });
   var cells="";
-  for(i=0;i<start;i++) cells+='<div class="cell pad"></div>';
-  for(i=1;i<=n;i++){
-    var date=m+"-"+String(i).padStart(2,"0"), ss=byDay[date]||[];
-    var cls="cell"+(ss.length?" on":"")+
+  for(i=0;i<42;i++){
+    var dt=new Date(y,mo,1-start+i,12), date=dt.getFullYear()+"-"+
+      String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+    var ss=byDay[date]||[], outside=ym(date)!==m;
+    var cls="cell"+(outside?" out":"")+(ss.length?" on":"")+
       (date===td?(S.live?" live":" today"):"");
     var dots=ss.length
       ? '<span class="dots">'+ss.slice(0,3).map(function(s){
@@ -1024,12 +1026,13 @@ function calendarMonth(m){
     var tag=ss.length?ss.map(function(s){return SPLIT_NAME[s.split];}).join(" + "):"";
     cells+= ss.length
       ? '<button class="'+cls+'" title="'+dstr(date)+(tag?" — "+tag:"")+
-        '" onclick="openSession(\''+ss[0].id+'\')">'+i+dots+'</button>'
-      : '<div class="'+cls+'">'+i+dots+'</div>';
+        '" onclick="openSession(\''+ss[0].id+'\')">'+dt.getDate()+dots+'</button>'
+      : '<div class="'+cls+'">'+dt.getDate()+dots+'</div>';
   }
   var ms=inMonth(m), days=Object.keys(byDay).length, mins=0, vol=0;
   ms.forEach(function(s){var t=totals(s); mins+=t.mins; vol+=t.vol;});
-  return '<section class="calmonth" data-month="'+m+'">'+
+  return '<section class="calviewport" data-month="'+m+'" '+
+    'ontouchstart="calendarTouchStart(event)" ontouchend="calendarTouchEnd(event)">'+
     '<div class="calmonthhead"><button onclick="openMonthPicker(\''+m+'\')" '+
       'aria-label="Jump to another month">'+monthLabel(m)+
       '<span class="jumpmark">&#9660;</span></button>'+
@@ -1039,7 +1042,7 @@ function calendarMonth(m){
       return '<div class="caldow">'+d+'</div>';}).join("")+cells+'</div>'+
     '<div class="calfoot"><div><b>'+days+'</b>'+(days===1?"day":"days")+' trained</div>'+
       (vol?'<div><b>'+Math.round(vol).toLocaleString()+'</b>lb lifted</div>':'')+
-      (mins?'<div><b>'+mins+'</b>min cardio</div>':'')+'</div></div>';
+      (mins?'<div><b>'+mins+'</b>min cardio</div>':'')+'</div></div></section>';
 }
 
 function sessionCard(s){
@@ -1055,15 +1058,13 @@ function sessionCard(s){
       return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+exSummary(kindOf(x),x.sets)+
         '</span></div>';}).join("")+'</div></button>';
 }
-function continuousCalendar(){
-  var out="", m=ym(today()), first=calendarStartMonth();
-  while(m>=first){
-    var ss=inMonth(m);
-    out+=calendarMonth(m)+(ss.length?'<div class="list monthsessions">'+
-      ss.map(sessionCard).join("")+'</div>':'')+'</section>';
-    m=shiftMonth(m,-1);
-  }
-  return '<div class="calstream">'+out+'</div>';
+function calendar(){
+  var m=S.month, first=calendarStartMonth(), last=ym(today());
+  if(m<first||m>last)m=last;
+  var ss=inMonth(m);
+  return calendarMonth(m)+(ss.length?'<div class="list monthsessions">'+
+    ss.map(sessionCard).join("")+'</div>':'<div class="empty">Nothing logged in '+
+    monthLabel(m)+'. Swipe for another month.</div>');
 }
 
 /* A shared session, as the crew sees it: the same card the calendar screen
@@ -1229,7 +1230,7 @@ function renderHome(){
       '<button aria-pressed="'+(S.home==="mine")+'" onclick="setHome(\'mine\')">Mine</button>'+ 
       '<button aria-pressed="'+(S.home==="crew")+'" onclick="setHome(\'crew\')">Crew</button></div>';
     if(S.home==="crew") return renderHomeShell(seg+crewHTML());
-    body = seg + continuousCalendar();
+    body = seg + calendar();
   } else {
     body='<input class="search exq" id="exq" placeholder="Search exercises" '+
       'autocomplete="off" value="'+esc(exQuery)+'" oninput="filterExercises()">'+
@@ -1881,6 +1882,19 @@ function toggleShare(){
   save(); render();
 }
 function setMonth(n){jumpToMonth(shiftMonth(S.month,n));} /* legacy exported-data compatibility */
+var calendarTouchX=null, calendarTouchY=null;
+function calendarTouchStart(e){
+  var t=e.touches&&e.touches[0];
+  if(t){calendarTouchX=t.clientX; calendarTouchY=t.clientY;}
+}
+function calendarTouchEnd(e){
+  if(calendarTouchX===null)return;
+  var t=e.changedTouches&&e.changedTouches[0], dx=t?t.clientX-calendarTouchX:0,
+    dy=t?t.clientY-calendarTouchY:0;
+  calendarTouchX=calendarTouchY=null;
+  if(Math.abs(dx)<45||Math.abs(dx)<=Math.abs(dy))return;
+  setMonth(dx<0?1:-1);
+}
 var pickerYear=+(S.month||ym(today())).slice(0,4);
 function openMonthPicker(m){
   S.month=m||ym(today()); pickerYear=+S.month.slice(0,4); renderMonthPicker();
