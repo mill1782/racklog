@@ -570,7 +570,9 @@ function loadStore(uid){
   var raw=lsGet(KEYNOW), sy=lsGet(SKEYNOW), adopt=false;
   if(!raw&&uid){ raw=lsGet(KEY); sy=lsGet(SKEY); adopt=!!(raw&&raw.sessions); }
   S=(raw&&raw.sessions)?raw:blank();
-  if(!S.month) S.month=today().slice(0,7);
+  /* Month selection is navigation state, not account data. An old saved month
+     must not make a fresh launch claim that last month is current. */
+  S.month=today().slice(0,7);
   /* filled in place rather than by bumping the key, which would wipe real
      logged workouts (HANDOFF trap 5). Do the same for the next field. */
   if(!S.social) S.social={};

@@ -947,6 +947,7 @@ function fakeServer() {
   store.delete("racklog.proto.v2");
   sandbox.loadStore("ann");
   S().sessions.push({ id: "a1", date: "2026-08-02", split: "push", ex: [] });
+  S().month = "2026-08";
   sandbox.saveLocal();
   sandbox.loadStore("bob");
   eq("a second account opens an empty store", S().sessions.length, 0);
@@ -955,6 +956,7 @@ function fakeServer() {
   sandbox.loadStore("ann");
   eq("the first account still has its own", S().sessions.length, 1);
   eq("and none of the other's", S().sessions[0].id, "a1");
+  eq("a fresh launch opens the real current month", S().month, sandbox.today().slice(0,7));
   ok("they are separate keys on the device",
      store.has(keyOf("ann")) && store.has(keyOf("bob")));
 
