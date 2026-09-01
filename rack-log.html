@@ -1083,15 +1083,21 @@ function workoutLog(){
   return order.map(function(m){
     var open=!collapsedLogMonths[m], ss=groups[m];
     return '<section class="logmonth"><button class="logmonthtoggle" aria-expanded="'+open+
-      '" onclick="toggleLogMonth(\''+m+'\')"><span class="label">'+monthLabel(m)+
+      '" onclick="toggleLogMonth(\''+m+'\',this)"><span class="label">'+monthLabel(m)+
       '</span><span class="meta">'+plural(ss.length,"workout")+
       '<span class="chev">&#9660;</span></span></button>'+
-      (open?'<div class="list">'+ss.map(sessionCard).join("")+'</div>':'')+'</section>';
+      '<div class="list"'+(open?'':' hidden')+'>'+ss.map(sessionCard).join("")+'</div></section>';
   }).join("");
 }
-function toggleLogMonth(m){
+function toggleLogMonth(m,button){
   if(collapsedLogMonths[m])delete collapsedLogMonths[m]; else collapsedLogMonths[m]=true;
-  render();
+  /* This is deliberately an in-place toggle. Re-rendering shortens the page
+     before its scroll offset is restored, which makes mobile browsers jump. */
+  if(button&&button.nextElementSibling){
+    var open=!collapsedLogMonths[m];
+    button.setAttribute("aria-expanded",String(open));
+    button.nextElementSibling.hidden=!open;
+  }else render();
 }
 function calendar(){
   var m=S.month, first=calendarStartMonth(), last=ym(today());

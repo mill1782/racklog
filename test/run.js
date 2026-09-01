@@ -247,8 +247,8 @@ ok("the workout log is grouped by month",
    viewHTML().indexOf("5 workouts") >= 0);
 sandbox.toggleLogMonth("2026-07");
 ok("a workout month can be collapsed",
-   viewHTML().indexOf("Sat, Jul 4") < 0 &&
-   /aria-expanded="false" onclick="toggleLogMonth\('2026-07'\)"/.test(viewHTML()));
+   /aria-expanded="false" onclick="toggleLogMonth\('2026-07',this\)"/.test(viewHTML()) &&
+   /toggleLogMonth\('2026-07',this\)[\s\S]*?<div class="list" hidden>/.test(viewHTML()));
 sandbox.toggleLogMonth("2026-07");
 S().sessions.pop();
 
