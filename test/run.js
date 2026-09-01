@@ -232,10 +232,17 @@ sandbox.openMonthPicker("2026-08");
 ok("picker offers month choices", els.dialog.innerHTML.indexOf("August") >= 0);
 ok("future months are disabled", /disabled[^>]*>October<\/button>/.test(els.dialog.innerHTML));
 sandbox.closeDialog();
+scrollEl.scrollTop = 180;
 sandbox.calendarTouchStart({touches:[{clientX:300,clientY:100}]});
 sandbox.calendarTouchEnd({changedTouches:[{clientX:100,clientY:105}]});
 eq("swiping left advances one month", S().month, "2026-09");
+eq("swiping months keeps the page scroll position", scrollEl.scrollTop, 180);
 sandbox.setMonth(-1);
+S().sessions.push({id:"older-log",date:"2026-07-04",split:"pull",ex:[]});
+sandbox.render();
+ok("the workout log is not filtered by the displayed month",
+   viewHTML().indexOf("Sat, Jul 4") >= 0 && viewHTML().indexOf("Workout log") >= 0);
+S().sessions.pop();
 
 /* ---- 5. classification ---- */
 group("Exercise classification");

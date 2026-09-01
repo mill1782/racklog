@@ -383,6 +383,7 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 .calfoot b{font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--ink);font-size:15px;
   display:block;margin-bottom:1px}
 .monthsessions{margin-top:10px}
+.loghead{margin:18px 0 10px;font-size:19px;text-transform:uppercase;letter-spacing:.04em}
 .monthpickerhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .monthpickerhead h2{font-size:22px}
 .monthpickerhead button{width:38px;height:38px;border-radius:8px;background:var(--surface-2);
@@ -1063,10 +1064,10 @@ function sessionCard(s){
 function calendar(){
   var m=S.month, first=calendarStartMonth(), last=ym(today());
   if(m<first||m>last)m=last;
-  var ss=inMonth(m);
-  return calendarMonth(m)+(ss.length?'<div class="list monthsessions">'+
-    ss.map(sessionCard).join("")+'</div>':'<div class="empty">Nothing logged in '+
-    monthLabel(m)+'. Swipe for another month.</div>');
+  var ss=sorted();
+  return calendarMonth(m)+'<h2 class="loghead">Workout log</h2>'+
+    (ss.length?'<div class="list monthsessions">'+ss.map(sessionCard).join("")+'</div>':
+      '<div class="empty">No workouts logged yet.</div>');
 }
 
 /* A shared session, as the crew sees it: the same card the calendar screen
@@ -1919,10 +1920,6 @@ function jumpToMonth(m){
   var first=calendarStartMonth(), last=ym(today());
   if(m<first||m>last)return;
   S.month=m; closeDialog(); save(); render();
-  setTimeout(function(){
-    var el=document.querySelector('[data-month="'+m+'"]');
-    if(el&&el.scrollIntoView)el.scrollIntoView({block:"start",behavior:"smooth"});
-  },40);
 }
 /* home always means the calendar, never whichever tab was last open */
 function goHome(){S.tab="history";view={name:"home"};save();render();}
