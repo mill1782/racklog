@@ -1457,8 +1457,8 @@ function renderSession(){
         (s.shared?'&check; Shared':'Share to followers')+'</button>'+
         '<button class="shareicon" onclick="openWorkoutShare(\''+s.id+'\')" '+
         'aria-label="Share workout"><svg viewBox="0 0 24 24" aria-hidden="true">'+
-        '<path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5"/>'+
-        '<path d="M6 10H4.5A1.5 1.5 0 003 11.5v7A1.5 1.5 0 004.5 20h15a1.5 1.5 0 001.5-1.5v-7a1.5 1.5 0 00-1.5-1.5H18"/>'+
+        '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/>'+
+        '<circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4"/>'+
         '</svg></button></div>')+
     '</header>'+scroll(head+cards+empty);
   BAR.innerHTML = live

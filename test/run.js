@@ -488,7 +488,7 @@ ok("a finished session offers Share", viewHTML().indexOf("toggleShare()") >= 0);
 ok("a finished session has an accessible share icon",
    viewHTML().indexOf('aria-label="Share workout"') >= 0 &&
    viewHTML().indexOf("openWorkoutShare('s3')") >= 0 &&
-   viewHTML().indexOf('<svg viewBox="0 0 24 24"') >= 0);
+   viewHTML().indexOf('<circle cx="18" cy="5"') >= 0);
 ok("the shared message uses the approved first-person challenge",
    sandbox.workoutShareText(S().sessions.find(s => s.id === "s3")).indexOf(
      "Here’s the Legs workout I did today. Think you can beat it?") === 0);
