@@ -487,7 +487,8 @@ sandbox.openSession("s3");
 ok("a finished session offers Share", viewHTML().indexOf("toggleShare()") >= 0);
 ok("a finished session has an accessible share icon",
    viewHTML().indexOf('aria-label="Share workout"') >= 0 &&
-   viewHTML().indexOf("openWorkoutShare('s3')") >= 0);
+   viewHTML().indexOf("openWorkoutShare('s3')") >= 0 &&
+   viewHTML().indexOf('<svg viewBox="0 0 24 24"') >= 0);
 ok("the shared message uses the approved first-person challenge",
    sandbox.workoutShareText(S().sessions.find(s => s.id === "s3")).indexOf(
      "Here’s the Legs workout I did today. Think you can beat it?") === 0);
@@ -1106,6 +1107,10 @@ function fakeServer() {
   sandbox.openWorkoutShare(fresh.id);
   ok("the share preview shows the approved challenge",
      els.dialog.innerHTML.indexOf("Think you can beat it?") >= 0);
+  ok("the share preview mirrors the calendar card",
+     els.dialog.innerHTML.indexOf('class="sharecard"') >= 0 &&
+     els.dialog.innerHTML.indexOf("Bench") >= 0 &&
+     els.dialog.innerHTML.indexOf('class="chip">Push') >= 0);
   const sharesBefore = shareCalls.length;
   sandbox.sendWorkoutShare(fresh.id);
   await new Promise(r => setImmediate(r));
