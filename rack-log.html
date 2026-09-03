@@ -82,6 +82,10 @@ header{padding:18px 16px 12px;display:flex;align-items:flex-end;justify-content:
   font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:13px;color:var(--ink-2);
   padding:6px 8px;margin:-6px -8px}
 .back:hover{color:var(--accent)}
+.headacts{display:flex;align-items:center;gap:10px}
+.shareicon{width:40px;height:40px;display:grid;place-items:center;border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-size:20px;line-height:1}
+.shareicon:hover{background:var(--surface-3);color:var(--accent)}
 
 .chip{display:inline-flex;align-items:center;gap:6px;font-family:"Barlow Condensed",sans-serif;
   font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
@@ -406,6 +410,12 @@ body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%
 .monthpickgrid button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .monthpickgrid button[aria-current="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .monthpickgrid button:disabled{opacity:.28;cursor:default}
+.sharepreview{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-2)}
+.sharepreview b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:17px;
+  text-transform:uppercase;margin-bottom:5px}
+.sharepreview p{margin:0 0 8px;color:var(--ink);font-size:14px}
+.sharepreview .sessionmeta{margin:0}
 .statrow{display:flex;gap:10px;margin-bottom:12px}
 .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 12px}
 .stat .v{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:700;line-height:1.15;margin-top:3px}
@@ -1438,8 +1448,10 @@ function renderSession(){
   V.innerHTML='<header><button class="back" onclick="goHome()">&lsaquo; Rack Log</button>'+
     (live?'<button class="back" onclick="askCancel()">Cancel workout</button>'
      :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>'
-     :'<button class="back" onclick="toggleShare()">'+
-        (s.shared?'&check; Shared':'Share to followers')+'</button>')+
+     :'<div class="headacts"><button class="back" onclick="toggleShare()">'+
+        (s.shared?'&check; Shared':'Share to followers')+'</button>'+
+        '<button class="shareicon" onclick="openWorkoutShare(\''+s.id+'\')" '+
+        'aria-label="Share workout">&#8599;</button></div>')+
     '</header>'+scroll(head+cards+empty);
   BAR.innerHTML = live
     ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
@@ -1941,6 +1953,89 @@ function toggleShare(){
   if(!s) return;
   if(s.shared) delete s.shared; else s.shared=true;
   save(); render();
+}
+function workoutShareText(s){
+  var t=totals(s), detail=plural(s.ex.length,"exercise")+" \u00b7 "+plural(t.sets,"set");
+  if(t.hasLift)detail+=" \u00b7 "+Math.round(t.vol).toLocaleString()+" lb";
+  if(t.hasCardio)detail+=" \u00b7 "+t.mins+" min cardio";
+  if(t.hasHold)detail+=" \u00b7 "+holdTime(t.secs);
+  return "Here\u2019s the "+SPLIT_NAME[s.split]+" workout I did today. Think you can beat it?"+
+    "\n\n"+SPLIT_NAME[s.split]+" workout\n"+detail;
+}
+function openWorkoutShare(id){
+  var s=S.sessions.filter(function(x){return x.id===id;})[0];
+  if(!s)return;
+  var t=totals(s), detail=plural(s.ex.length,"exercise")+" &middot; "+plural(t.sets,"set");
+  if(t.hasLift)detail+=" &middot; "+Math.round(t.vol).toLocaleString()+" lb";
+  dlgOpen=true; dlgAction=null;
+  DLG.innerHTML='<h2>Share workout</h2><div class="sharepreview"><p>'+esc(
+    "Here\u2019s the "+SPLIT_NAME[s.split]+" workout I did today. Think you can beat it?")+
+    '</p><b>'+SPLIT_NAME[s.split]+' workout</b><div class="sessionmeta">'+detail+'</div></div>'+
+    '<p>The signup link works once, expires after 48 hours, and connects them to your crew.</p>'+
+    '<div class="dlgbtns"><button class="btn ghost" onclick="closeDialog()">Cancel</button>'+
+    '<button class="btn" id="shareSend" onclick="sendWorkoutShare(\''+id+'\')">Share</button></div>';
+  document.body.classList.add("dialog-open");
+}
+function shareFallback(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    return navigator.clipboard.writeText(text).then(function(){return true;});
+  return Promise.reject(new Error("Sharing is not available."));
+}
+function workoutShareFile(s){
+  if(!document.createElement||typeof File==="undefined")return Promise.resolve(null);
+  try{
+    var c=document.createElement("canvas"), ctx=c.getContext&&c.getContext("2d");
+    if(!ctx||!c.toBlob)return Promise.resolve(null);
+    var shown=s.ex.slice(0,6), h=430+shown.length*76+(s.ex.length>shown.length?54:0);
+    c.width=1080;c.height=h;
+    ctx.fillStyle="#16181d";ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle="#c8372a";ctx.fillRect(0,0,18,c.height);
+    ctx.fillStyle="#f2f3f5";ctx.font="700 42px sans-serif";ctx.fillText("RACK LOG",70,78);
+    ctx.fillStyle="#878e9c";ctx.font="500 27px sans-serif";ctx.fillText(dstr(s.date,true).toUpperCase(),70,128);
+    ctx.fillStyle="#ffffff";ctx.font="700 66px sans-serif";
+    ctx.fillText((SPLIT_NAME[s.split]+" WORKOUT").toUpperCase(),70,224);
+    var t=totals(s), meta=plural(s.ex.length,"exercise")+"  \u00b7  "+plural(t.sets,"set");
+    if(t.hasLift)meta+="  \u00b7  "+Math.round(t.vol).toLocaleString()+" lb";
+    ctx.fillStyle="#b8bdc7";ctx.font="500 31px sans-serif";ctx.fillText(meta,70,282);
+    ctx.strokeStyle="#343840";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(70,326);ctx.lineTo(1010,326);ctx.stroke();
+    shown.forEach(function(x,i){
+      var y=386+i*76;
+      ctx.fillStyle="#f2f3f5";ctx.font="600 31px sans-serif";ctx.fillText(x.name,70,y);
+      ctx.fillStyle="#a2a8b3";ctx.font="500 25px sans-serif";
+      ctx.textAlign="right";ctx.fillText(exSummary(kindOf(x),x.sets).replace(/&middot;/g,"\u00b7"),1010,y);
+      ctx.textAlign="left";
+    });
+    if(s.ex.length>shown.length){ctx.fillStyle="#878e9c";ctx.font="500 25px sans-serif";
+      ctx.fillText("+ "+(s.ex.length-shown.length)+" more",70,390+shown.length*76);}
+    return new Promise(function(resolve){c.toBlob(function(blob){
+      resolve(blob?new File([blob],"rack-log-"+s.date+".png",{type:"image/png"}):null);
+    },"image/png");});
+  }catch(e){return Promise.resolve(null);}
+}
+function sendWorkoutShare(id){
+  var s=S.sessions.filter(function(x){return x.id===id;})[0], b=document.getElementById("shareSend");
+  if(!s||!b)return;
+  b.disabled=true; b.textContent="Preparing\u2026";
+  apiFetch("/api/invites",{method:"POST"}).then(function(invite){
+    var text=workoutShareText(s), payload=text+"\n\nJoin me on Rack Log:\n"+invite.url;
+    return workoutShareFile(s).then(function(file){
+      var data={title:SPLIT_NAME[s.split]+" workout",text:text,url:invite.url};
+      if(file&&navigator.canShare&&navigator.canShare({files:[file]}))data.files=[file];
+      return navigator.share?navigator.share(data):shareFallback(payload);
+    }).then(function(){closeDialog();},function(e){
+      if(e&&e.name==="AbortError"){
+        apiFetch("/api/invites/"+encodeURIComponent(invite.id)+"/revoke",{method:"POST"});
+        closeDialog(); return;
+      }
+      return shareFallback(payload).then(function(){
+        b.disabled=false; b.textContent="Copied";
+      });
+    });
+  },function(e){
+    b.disabled=false; b.textContent="Try again";
+    var p=DLG.querySelector?DLG.querySelector("p"):null;
+    if(p)p.textContent=(e&&e.message)||"Couldn\u2019t create a signup link.";
+  });
 }
 function setMonth(n){jumpToMonth(shiftMonth(S.month,n));} /* legacy exported-data compatibility */
 var calendarTouchX=null, calendarTouchY=null;

@@ -25,6 +25,7 @@ const cssHidesCollapsedLog = /\.logmonth \.list\[hidden\]\s*\{\s*display:none\s*
 /* ---- minimal DOM ---- */
 const els = {};
 const store = new Map();          /* the fake localStorage, inspectable */
+const shareCalls = [];
 function mkEl() {
   return { innerHTML: "", value: "", focus() {}, addEventListener() {},
            onclick: null, classList: { add() {}, remove() {} }, scrollTo() {} };
@@ -54,6 +55,10 @@ const sandbox = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => { store.set(k, String(v)); },
     removeItem: (k) => { store.delete(k); }
+  },
+  navigator: {
+    share: (payload) => { shareCalls.push(payload); return Promise.resolve(); },
+    clipboard: { writeText: () => Promise.resolve() }
   },
   document: {
     getElementById: (id) => els[id] || (els[id] = mkEl()),
@@ -480,6 +485,12 @@ group("Sharing a session");
 sandbox.setHome("mine");
 sandbox.openSession("s3");
 ok("a finished session offers Share", viewHTML().indexOf("toggleShare()") >= 0);
+ok("a finished session has an accessible share icon",
+   viewHTML().indexOf('aria-label="Share workout"') >= 0 &&
+   viewHTML().indexOf("openWorkoutShare('s3')") >= 0);
+ok("the shared message uses the approved first-person challenge",
+   sandbox.workoutShareText(S().sessions.find(s => s.id === "s3")).indexOf(
+     "Here’s the Legs workout I did today. Think you can beat it?") === 0);
 ok("an old session is unshared until you say so",
    S().sessions.filter(x => x.id === "s3")[0].shared === undefined);
 sandbox.toggleShare();
@@ -1092,6 +1103,16 @@ function fakeServer() {
   eq("a finished workout is shared without being asked", fresh.shared, true);
   sandbox.openSession(fresh.id);
   ok("the session says so", viewHTML().indexOf("Shared") >= 0);
+  sandbox.openWorkoutShare(fresh.id);
+  ok("the share preview shows the approved challenge",
+     els.dialog.innerHTML.indexOf("Think you can beat it?") >= 0);
+  const sharesBefore = shareCalls.length;
+  sandbox.sendWorkoutShare(fresh.id);
+  await new Promise(r => setImmediate(r));
+  eq("sharing opens the phone share sheet", shareCalls.length, sharesBefore + 1);
+  ok("the native share includes the challenge and signup link",
+     shareCalls[shareCalls.length - 1].text.indexOf("Here’s the Push workout I did today") === 0 &&
+     /\/join\//.test(shareCalls[shareCalls.length - 1].url));
   sandbox.toggleShare();
   ok("and one tap opts back out", fresh.shared === undefined);
   sandbox.openData();
