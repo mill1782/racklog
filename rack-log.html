@@ -2232,27 +2232,41 @@ function fitsDay(sp,day,kind){
 function fillPick(){
   var q=Q.value.trim().toLowerCase();
   var idx=exerciseIndex(), t=editable(), split=t?t.split:"push";
-  var mine=Array.from(idx.values()).filter(function(e){return searchMatch(e.name,q);})
-    .sort(function(a,b){
-      var ap=fitsDay(a.split,split,a.kind);
-      var bp=fitsDay(b.split,split,b.kind);
-      return (bp?1:0)-(ap?1:0) || b.last.localeCompare(a.last);});
+  var logged=Array.from(idx.values()).filter(function(e){
+    return searchMatch(e.name,q);
+  }).map(function(e){
+    return {name:e.name,split:e.split,kind:e.kind,last:e.last,logged:e};
+  });
   var known={}; idx.forEach(function(v,k){known[k.toLowerCase()]=1;});
 
-  /* library movements not yet logged, kept in their own classification */
-  var groups=["push","pull","legs","other"].map(function(sp){
-    return {split:sp, items:(EXTRA[sp]||[]).filter(function(n){
-      return !known[n.toLowerCase()] && searchMatch(n,q);})};})
-    .filter(function(g){return g.items.length;});
-  /* the day you're on floats to the top */
-  groups.sort(function(a,b){return (fitsDay(b.split,split,"lift")?1:0)-
-    (fitsDay(a.split,split,"lift")?1:0);});
-  var cardio=CARDIO_LIB.filter(function(c){
-    return !known[c.name.toLowerCase()] && searchMatch(c.name,q);});
-
-  var allLib=[]; groups.forEach(function(g){allLib=allLib.concat(g.items);});
-  var exact = !!known[q] || allLib.concat(cardio.map(function(c){return c.name;}))
-    .some(function(n){return n.toLowerCase()===q;});
+  /* Unlogged library movements use the same result shape as logged ones, so
+     the active workout day can be ranked as one result set instead of as a
+     logged block followed by separate library categories. */
+  var libraryGroups=["push","pull","legs","other"].map(function(sp){
+    return {split:sp,items:(EXTRA[sp]||[]).filter(function(n){
+      return !known[n.toLowerCase()] && searchMatch(n,q);
+    }).map(function(n){
+      return {name:n,split:sp,kind:LIB_KIND[n]||"lift",last:"",logged:null};
+    })};
+  });
+  var cardio={split:"cardio",items:CARDIO_LIB.filter(function(c){
+    return !known[c.name.toLowerCase()] && searchMatch(c.name,q);
+  }).map(function(c){
+    return {name:c.name,split:"cardio",kind:c.kind,last:"",logged:null};
+  })};
+  var library=libraryGroups.reduce(function(a,g){return a.concat(g.items);},[])
+    .concat(cardio.items);
+  var all=logged.concat(library);
+  var dayItems=all.filter(function(e){return fitsDay(e.split,split,e.kind);});
+  var otherItems=all.filter(function(e){return !fitsDay(e.split,split,e.kind);});
+  /* Recent logged movements lead the active-day section; never-used library
+     movements follow them in their stable library order. */
+  function recentFirst(a,b){
+    return (b.last?1:0)-(a.last?1:0) ||
+      (b.last&&a.last?b.last.localeCompare(a.last):0);
+  }
+  dayItems.sort(recentFirst);
+  var exact = !!known[q] || library.some(function(e){return e.name.toLowerCase()===q;});
 
   var h="", addHTML="";
   if(q && !exact){
@@ -2261,31 +2275,39 @@ function fillPick(){
       .sort(function(a,b){return (b===split?1:0)-(a===split?1:0);})
       .map(function(sp){return newItem(n,"lift",sp,SPLIT_NAME[sp],"reps &times; weight");});
     choices.push(newItem(n,"hold","other","Timed hold","seconds + optional weight"));
-    choices.push(newItem(n,"machine","cardio","Cardio","time + level"));
-    addHTML='<div class="grouphead eyebrow">Add &ldquo;'+esc(n)+'&rdquo; as</div>'+choices.join("");
-  }
-  if(mine.length) h+='<div class="grouphead eyebrow">You&rsquo;ve logged these</div>'+
-    mine.map(function(e){
+      choices.push(newItem(n,"machine","cardio","Cardio","time + level"));
+      addHTML='<div class="grouphead eyebrow">Add &ldquo;'+esc(n)+'&rdquo; as</div>'+choices.join("");
+    }
+    function resultHTML(e){
+      if(!e.logged)
+        return item(e,isCardio(e.kind)
+          ? (e.kind==="tread" ? "time, speed, incline" : "time + level") : "");
       var meta = isCardio(e.kind)
         ? ago(e.last)+" · "+minutes(historyOf(e.name)[0].sets)+" min"
         : e.kind==="hold"
         ? ago(e.last)+" · "+holdTime(seconds(historyOf(e.name)[0].sets))
         : ago(e.last)+" · top "+fmt(heaviest(historyOf(e.name)[0].sets)[1])+" lb";
-      return item(e,meta);}).join("");
-  h+=addHTML;
-  var cardioHTML = cardio.length
-    ? '<div class="grouphead eyebrow">Cardio machines</div>'+cardio.map(function(c){
-        return item({name:c.name,split:"cardio",kind:c.kind},
-          c.kind==="tread" ? "time, speed, incline" : "time + level");}).join("")
-    : "";
-  var liftHTML = groups.map(function(g){
-    return '<div class="grouphead eyebrow">'+GROUP_LABEL[g.split]+'</div>'+
-      g.items.map(function(n){return item({name:n,split:g.split,kind:LIB_KIND[n]||"lift"},"");}).join("");}).join("");
-  /* on a cardio day the machines lead, otherwise the day's own lifts do */
-  h += split==="cardio" ? cardioHTML+liftHTML : liftHTML+cardioHTML;
-  if(!h) h='<div class="empty">Type a name to add it.</div>';
-  document.getElementById("picklist").innerHTML=h;
-}
+      return item(e,meta);
+    }
+    if(dayItems.length)
+      h+='<div class="grouphead eyebrow">For your '+SPLIT_NAME[split]+' day</div>'+dayItems.map(resultHTML).join("");
+    h+=addHTML;
+    /* Keep the remaining classifications grouped, but leave any logged
+       movement beside its category's library choices. */
+    var remainingGroups=libraryGroups.map(function(g){
+      var items=otherItems.filter(function(e){return e.split===g.split;});
+      return {split:g.split,items:items};
+    }).filter(function(g){return g.items.length;});
+    if(otherItems.some(function(e){return e.split==="cardio";}))
+      remainingGroups.push({split:"cardio",items:otherItems.filter(function(e){return e.split==="cardio";})});
+    h+=remainingGroups.map(function(g){
+      var label=g.split==="cardio" ? "Cardio machines" : GROUP_LABEL[g.split];
+      return '<div class="grouphead eyebrow">'+label+'</div>'+
+        g.items.map(resultHTML).join("");
+    }).join("");
+    if(!h) h='<div class="empty">Type a name to add it.</div>';
+    document.getElementById("picklist").innerHTML=h;
+  }
 function item(e,meta){
   return '<button class="pickitem" data-split="'+e.split+
     '" onclick="pick(\''+jstr(e.name)+'\',\''+(e.kind||"lift")+'\',\''+e.split+'\')">'+
