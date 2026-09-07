@@ -279,10 +279,14 @@ header .back+h1{margin-top:8px}
 .splitpick{margin-top:16px;position:relative}
 .splitlabel{display:block;margin-bottom:6px;font-family:"Barlow Condensed",sans-serif;
   font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-.splitselect{display:flex;align-items:center;gap:10px;min-height:48px;padding:0 12px;
-  border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2)}
-.splitselect:focus-within{border-color:var(--accent)}
+.splitselect{position:relative}
+.splittrigger{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;
+  border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2);text-align:left}
+.splittrigger:hover,.splittrigger[aria-expanded="true"]{border-color:var(--accent)}
+.splittrigger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .splitdot{width:10px;height:10px;border-radius:50%;background:var(--split-color);flex:none}
+.splitvalue{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17px;
+  letter-spacing:.02em;color:var(--ink)}
 .splitpick[data-split="push"]{--split-color:var(--push)}
 .splitpick[data-split="pull"]{--split-color:var(--pull)}
 .splitpick[data-split="legs"]{--split-color:var(--legs)}
@@ -291,11 +295,31 @@ header .back+h1{margin-top:8px}
 .splitpick[data-split="upper"]{--split-color:var(--upper)}
 .splitpick[data-split="lower"]{--split-color:var(--lower)}
 .splitpick[data-split="full"]{--split-color:var(--full)}
-.splitselect select{appearance:none;flex:1;min-width:0;height:46px;padding:0 22px 0 0;
-  border:0;background:transparent;color:var(--ink);font-family:"Barlow Condensed",sans-serif;
-  font-weight:600;font-size:17px;letter-spacing:.02em;text-transform:uppercase;cursor:pointer}
-.splitselect select:focus{outline:none}
-.splitchev{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;pointer-events:none}
+.splitchev{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;pointer-events:none;
+  transition:transform .16s ease}
+.splittrigger[aria-expanded="true"] .splitchev{transform:rotate(180deg)}
+.splitmenu{position:absolute;z-index:6;top:calc(100% + 6px);left:0;right:0;padding:6px;
+  background:var(--surface);border:1px solid var(--line-2);border-radius:10px;
+  box-shadow:0 12px 28px rgba(10,11,14,.18)}
+.splitmenu[hidden]{display:none}
+.splitoption{width:100%;min-height:42px;display:flex;align-items:center;gap:10px;padding:0 10px;
+  border:0;border-radius:7px;background:transparent;color:var(--ink-2);text-align:left}
+.splitoption:hover,.splitoption:focus-visible,.splitoption[aria-selected="true"]{
+  background:var(--surface-2);color:var(--ink)}
+.splitoption:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.splitoption .splitdot{background:var(--option-color)}
+.splitoption[data-split="push"]{--option-color:var(--push)}
+.splitoption[data-split="pull"]{--option-color:var(--pull)}
+.splitoption[data-split="legs"]{--option-color:var(--legs)}
+.splitoption[data-split="cardio"]{--option-color:var(--cardio)}
+.splitoption[data-split="other"]{--option-color:var(--other)}
+.splitoption[data-split="upper"]{--option-color:var(--upper)}
+.splitoption[data-split="lower"]{--option-color:var(--lower)}
+.splitoption[data-split="full"]{--option-color:var(--full)}
+.splitoption .splitoptionlabel{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;
+  letter-spacing:.04em}
+.splitcheck{margin-left:auto;color:var(--accent);font-size:17px;line-height:1;opacity:0}
+.splitoption[aria-selected="true"] .splitcheck{opacity:1}
 
 .excard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);
   border-radius:12px;padding:14px;margin-bottom:10px}
@@ -1419,10 +1443,22 @@ function renderSession(){
       '<div class="num" style="font-size:17px;font-weight:700">'+readout.v+'</div></div></div>'+
     (canEdit?'<div class="splitpick" data-split="'+s.split+'">'+
       '<label class="splitlabel" for="split-select">Workout day</label>'+
-      '<div class="splitselect"><span class="splitdot" aria-hidden="true"></span>'+
-      '<select id="split-select" aria-label="Workout day" onchange="setSplit(this.value)">'+
-      SPLITS.map(function(p){return '<option value="'+p[0]+'"'+(s.split===p[0]?' selected':'')+'>'+p[1]+'</option>';}).join("")+
-      '</select><span class="splitchev" aria-hidden="true">&#8964;</span></div></div>':'')+
+      '<div class="splitselect">'+
+      '<button class="splittrigger" id="split-select" type="button" aria-haspopup="listbox" '+
+        'aria-expanded="false" aria-controls="split-menu" onclick="toggleSplitMenu()" '+
+        'onkeydown="splitTriggerKey(event)">'+
+        '<span class="splitdot" aria-hidden="true"></span>'+
+        '<span class="splitvalue">'+SPLIT_NAME[s.split]+'</span>'+
+        '<span class="splitchev" aria-hidden="true">&#8964;</span>'+
+      '</button>'+
+      '<div class="splitmenu" id="split-menu" role="listbox" aria-label="Workout day" hidden>'+
+        SPLITS.map(function(p){return '<button class="splitoption" type="button" role="option" '+
+          'data-split="'+p[0]+'" aria-selected="'+(s.split===p[0])+'" '+
+          'onclick="setSplit(\''+p[0]+'\')" onkeydown="splitOptionKey(event)">'+
+          '<span class="splitdot" aria-hidden="true"></span>'+
+          '<span class="splitoptionlabel">'+p[1]+'</span>'+
+          '<span class="splitcheck" aria-hidden="true">&check;</span></button>';}).join("")+
+      '</div></div></div>':'')+
     '</div>';
 
   var cards=s.ex.map(function(x,i){
@@ -2125,7 +2161,43 @@ function jumpToMonth(m){
 function goHome(){S.tab="history";view={name:"home"};save();render();}
 function resume(){view={name:"session"};render();}
 function startWorkout(){S.live={id:"live",date:today(),split:"push",ex:[]};view={name:"session"};save();render();}
-function setSplit(k){var t=editable(); if(!t)return; t.split=k;save();render();}
+function closeSplitMenu(){
+  var trigger=document.getElementById("split-select"), menu=document.getElementById("split-menu");
+  if(!trigger||!menu)return;
+  menu.hidden=true;
+  if(trigger.setAttribute)trigger.setAttribute("aria-expanded","false");
+}
+function toggleSplitMenu(){
+  var trigger=document.getElementById("split-select"), menu=document.getElementById("split-menu");
+  if(!trigger||!menu)return;
+  var open=trigger.getAttribute
+    ? trigger.getAttribute("aria-expanded")==="true" : !menu.hidden;
+  menu.hidden=open;
+  if(trigger.setAttribute)trigger.setAttribute("aria-expanded",String(!open));
+  if(open&&trigger.focus)trigger.focus();
+}
+function splitTriggerKey(e){
+  if(e.key==="Enter"||e.key===" "||e.key==="ArrowDown"){
+    e.preventDefault(); toggleSplitMenu();
+  }else if(e.key==="Escape"){
+    e.preventDefault(); closeSplitMenu();
+  }
+}
+function splitOptionKey(e){
+  var options=Array.prototype.slice.call(document.querySelectorAll(".splitoption")),
+    i=options.indexOf(e.currentTarget);
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault(); options[(i+(e.key==="ArrowDown"?1:-1)+options.length)%options.length].focus();
+  }else if(e.key==="Home"||e.key==="End"){
+    e.preventDefault(); options[e.key==="Home"?0:options.length-1].focus();
+  }else if(e.key==="Escape"){
+    e.preventDefault(); closeSplitMenu();
+    var trigger=document.getElementById("split-select"); if(trigger)trigger.focus();
+  }else if(e.key==="Enter"||e.key===" "){
+    e.preventDefault(); e.currentTarget.click();
+  }
+}
+function setSplit(k){var t=editable(); if(!t)return; closeSplitMenu(); t.split=k;save();render();}
 function openSession(id){view={name:"session",id:id};render();}
 /* The one session logging actions write to: the live workout, or a finished
    one opened for editing. Everything below goes through it, so live and edit
@@ -2214,7 +2286,10 @@ function closeDialog(){dlgAction=null;dlgOpen=false;document.body.classList.remo
 function dialogYes(){var f=dlgAction; closeDialog(); if(f)f();}
 document.getElementById("dscrim").onclick=closeDialog;
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape"&&dlgOpen)closeDialog();});
+  if(e.key==="Escape"&&dlgOpen)closeDialog();
+  if(e.key==="Escape")closeSplitMenu();});
+document.addEventListener("click",function(e){
+  if(!e.target.closest||!e.target.closest(".splitpick"))closeSplitMenu();});
 
 /* ---------- exercise picker ---------- */
 var Q=document.getElementById("q");
