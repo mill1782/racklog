@@ -300,7 +300,12 @@ header .back+h1{margin-top:8px}
 .excard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);
   border-radius:12px;padding:14px;margin-bottom:10px}
 .exhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-.exhead h2{font-size:19px}
+.exname{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1}
+.exhead h2{font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chartlink{display:inline-flex;align-items:center;gap:3px;flex:none;padding:4px 0;
+  color:var(--ink-2);font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase}
+.chartlink:hover{color:var(--accent)}
 .kill{color:var(--ink-3);font-size:20px;line-height:1;padding:4px 8px;margin:-4px -8px}
 .kill:hover{color:var(--accent)}
 
@@ -1426,7 +1431,7 @@ function renderSession(){
     '</div>';
 
   var cards=s.ex.map(function(x,i){
-    var k=kindOf(x), spec=KINDS[k], prev=priorTo(x.name,s);
+    var k=kindOf(x), spec=KINDS[k], prev=priorTo(x.name,s), hasHistory=historyOf(x.name).length>0;
     var lastRow = prev
       ? '<div class="lastline"><span class="lastlabel">'+dstr(prev.date)+'</span>'+
         prev.sets.map(function(tt){ return canEdit
@@ -1458,10 +1463,12 @@ function renderSession(){
     }
     /* the card wears the exercise's own classification, so a legs movement
        slotted into a push day is visible as one */
+    var chartLink=hasHistory
+      ? '<button class="chartlink" onclick="openExercise(\''+jstr(x.name)+'\')" aria-label="View chart for '+esc(x.name)+'">Chart <span aria-hidden="true">&rsaquo;</span></button>'
+      : '';
     return '<div class="excard" data-split="'+(x.split||(isCardio(k)?"cardio":s.split))+'">'+
-      '<div class="exhead"><h2>'+esc(x.name)+'</h2>'+
-      (canEdit?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>'
-           :'<button class="back" onclick="openExercise(\''+jstr(x.name)+'\')">Chart &rsaquo;</button>')+
+      '<div class="exhead"><div class="exname"><h2>'+esc(x.name)+'</h2>'+chartLink+'</div>'+
+      (canEdit?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>':'')+
       '</div>'+lastRow+entry+(x.sets.length?'<div class="sets">'+sets+'</div>':"")+'</div>';
   }).join("");
 

@@ -163,11 +163,17 @@ sandbox.document.getElementById("f0_1").value = 185;
 sandbox.addSet(0);
 ok("beating a past best flags PR", viewHTML().indexOf(">PR<") >= 0);
 eq("draft carries to the next set", JSON.stringify(S().live.ex[0].draft), "[8,185]");
+ok("live exercises with history show an inline chart action",
+   /class="exname"><h2>Squat<\/h2><button class="chartlink"/.test(viewHTML()));
+ok("the inline chart action leaves the remove button at the far right",
+   viewHTML().indexOf('class="chartlink"') < viewHTML().indexOf('title="Remove exercise"'));
 ok("tapping a workout value selects the whole number",
    viewHTML().indexOf('onfocus="this.select()" onclick="this.select()"') >= 0);
 ok("logging controls stay above the growing set list",
    viewHTML().indexOf('id="entry0"') < viewHTML().indexOf('class="sets"'));
 sandbox.pick("Leg Press", "lift", "legs");   /* left empty on purpose */
+ok("new exercises without history do not show an empty chart action",
+   viewHTML().indexOf('<h2>Leg Press</h2><button class="chartlink"') < 0);
 sandbox.finish();
 eq("finished session is stored", S().sessions.length, 6);
 eq("empty exercise dropped on finish",
