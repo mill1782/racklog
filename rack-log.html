@@ -295,8 +295,9 @@ header .back+h1{margin-top:8px}
 .splitpick[data-split="upper"]{--split-color:var(--upper)}
 .splitpick[data-split="lower"]{--split-color:var(--lower)}
 .splitpick[data-split="full"]{--split-color:var(--full)}
-.splitchev{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;pointer-events:none;
+.splitchev{width:16px;height:16px;margin-left:auto;color:var(--ink-3);flex:none;pointer-events:none;
   transition:transform .16s ease}
+.splitchev path{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .splittrigger[aria-expanded="true"] .splitchev{transform:rotate(180deg)}
 .splitmenu{position:absolute;z-index:6;top:calc(100% + 6px);left:0;right:0;padding:6px;
   background:var(--surface);border:1px solid var(--line-2);border-radius:10px;
@@ -1449,7 +1450,8 @@ function renderSession(){
         'onkeydown="splitTriggerKey(event)">'+
         '<span class="splitdot" aria-hidden="true"></span>'+
         '<span class="splitvalue">'+SPLIT_NAME[s.split]+'</span>'+
-        '<span class="splitchev" aria-hidden="true">&#8964;</span>'+
+        '<svg class="splitchev" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+
+          '<path d="m6 9 6 6 6-6"></path></svg>'+
       '</button>'+
       '<div class="splitmenu" id="split-menu" role="listbox" aria-label="Workout day" hidden>'+
         SPLITS.map(function(p){return '<button class="splitoption" type="button" role="option" '+
