@@ -276,11 +276,26 @@ header .back+h1{margin-top:8px}
 
 .livehead{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 14px;margin-bottom:12px;border-left:3px solid var(--c)}
-.splitpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.splitpick button{flex:1 1 60px;padding:8px 2px;border-radius:8px;background:var(--surface-2);
-  font-family:"Barlow Condensed",sans-serif;font-weight:600;text-transform:uppercase;
-  letter-spacing:.06em;font-size:13px;color:var(--ink-2);border:1px solid transparent}
-.splitpick button[aria-pressed="true"]{background:var(--c);color:var(--on-chip);border-color:var(--c)}
+.splitpick{margin-top:16px;position:relative}
+.splitlabel{display:block;margin-bottom:6px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.splitselect{display:flex;align-items:center;gap:10px;min-height:48px;padding:0 12px;
+  border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2)}
+.splitselect:focus-within{border-color:var(--accent)}
+.splitdot{width:10px;height:10px;border-radius:50%;background:var(--split-color);flex:none}
+.splitpick[data-split="push"]{--split-color:var(--push)}
+.splitpick[data-split="pull"]{--split-color:var(--pull)}
+.splitpick[data-split="legs"]{--split-color:var(--legs)}
+.splitpick[data-split="cardio"]{--split-color:var(--cardio)}
+.splitpick[data-split="other"]{--split-color:var(--other)}
+.splitpick[data-split="upper"]{--split-color:var(--upper)}
+.splitpick[data-split="lower"]{--split-color:var(--lower)}
+.splitpick[data-split="full"]{--split-color:var(--full)}
+.splitselect select{appearance:none;flex:1;min-width:0;height:46px;padding:0 22px 0 0;
+  border:0;background:transparent;color:var(--ink);font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:17px;letter-spacing:.02em;text-transform:uppercase;cursor:pointer}
+.splitselect select:focus{outline:none}
+.splitchev{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;pointer-events:none}
 
 .excard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);
   border-radius:12px;padding:14px;margin-bottom:10px}
@@ -1402,9 +1417,12 @@ function renderSession(){
         esc(firstName(personOf(s.from.who).name))+'&rsquo;s workout</div>':'')+'</div>'+
       '<div style="text-align:right"><div class="eyebrow">'+readout.k+'</div>'+
       '<div class="num" style="font-size:17px;font-weight:700">'+readout.v+'</div></div></div>'+
-    (canEdit?'<div class="splitpick">'+SPLITS.map(function(p){
-      return '<button data-split="'+p[0]+'" aria-pressed="'+(s.split===p[0])+
-        '" onclick="setSplit(\''+p[0]+'\')">'+p[1]+'</button>';}).join("")+'</div>':'')+
+    (canEdit?'<div class="splitpick" data-split="'+s.split+'">'+
+      '<label class="splitlabel" for="split-select">Workout day</label>'+
+      '<div class="splitselect"><span class="splitdot" aria-hidden="true"></span>'+
+      '<select id="split-select" aria-label="Workout day" onchange="setSplit(this.value)">'+
+      SPLITS.map(function(p){return '<option value="'+p[0]+'"'+(s.split===p[0]?' selected':'')+'>'+p[1]+'</option>';}).join("")+
+      '</select><span class="splitchev" aria-hidden="true">&#8964;</span></div></div>':'')+
     '</div>';
 
   var cards=s.ex.map(function(x,i){

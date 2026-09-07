@@ -341,6 +341,9 @@ ok("finished session opens read-only", barHTML().indexOf("editSession()") >= 0 &
 sandbox.editSession();
 ok("Edit unlocks the live controls", viewHTML().indexOf("delSet(") >= 0 &&
    viewHTML().indexOf("splitpick") >= 0 && viewHTML().indexOf("addSet(") >= 0);
+ok("Edit mode uses a workout day dropdown", viewHTML().indexOf('id="split-select"') >= 0 &&
+   viewHTML().indexOf('<option value="upper"') >= 0 &&
+   viewHTML().indexOf('onchange="setSplit(this.value)"') >= 0);
 ok("edit mode offers Done, not Finish", barHTML().indexOf("doneEditing()") >= 0 &&
    barHTML().indexOf("finish()") < 0);
 const flySets = pushDay().ex[3].sets.length;
