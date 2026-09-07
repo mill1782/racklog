@@ -276,10 +276,23 @@ sandbox.startWorkout(); sandbox.setSplit("pull");
 sandbox.setSplit("full");
 ok("Full Body renders as a workout day", viewHTML().indexOf("Full Body day") >= 0);
 sandbox.setSplit("pull");
+sandbox.document.getElementById("q").value = "";
+sandbox.fillPick();
+const picker = pickHTML();
+const pullHeading = picker.indexOf("For your Pull day");
+const recentPull = picker.indexOf("<span>Dumbbell Row</span>");
+const unusedPull = picker.indexOf("<span>Barbell Row</span>");
+const recentOther = picker.indexOf("<span>Squat</span>");
+ok("all selected-day exercises share the top picker section",
+   pullHeading >= 0 && recentPull > pullHeading && unusedPull > recentPull &&
+   recentOther > unusedPull);
+ok("recent selected-day exercises lead never-used ones",
+   recentPull < unusedPull);
 sandbox.document.getElementById("q").value = "Squ";
 sandbox.fillPick();
-ok("logged exercise matches appear before add-exercise choices",
-   pickHTML().indexOf("You&rsquo;ve logged these") < pickHTML().indexOf("Add &ldquo;Squ&rdquo; as"));
+ok("search results still include logged exercises and add choices",
+   pickHTML().indexOf("<span>Squat</span>") >= 0 &&
+   pickHTML().indexOf("Add &ldquo;Squ&rdquo; as") >= 0);
 sandbox.document.getElementById("q").value = "dumbell";
 sandbox.fillPick();
 ok("the exercise picker forgives a one-letter misspelling",
