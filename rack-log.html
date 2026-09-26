@@ -1,0 +1,2473 @@
+<title>Rack Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --keyboard-inset:0px; --sheet-vh:100dvh;
+  --bg:#F2F3F5; --frame:#E4E6EB;
+  --surface:#FFFFFF; --surface-2:#E9EBEF; --surface-3:#DFE2E8;
+  --ink:#16181D; --ink-2:#565C68; --ink-3:#878E9C;
+  --line:#DCDFE5; --line-2:#C8CCD4;
+  --accent:#C8372A; --on-accent:#FFFFFF; --on-chip:#FFFFFF;
+  --push:#C8372A; --pull:#2C5FBF; --legs:#8F6714; --cardio:#2E7D4F; --other:#5B6472;
+  --upper:#6B4FA1; --lower:#68752B; --full:#9A4F2E;
+  /* people, deliberately off the bumper-plate hues so a person's disc is never
+     mistaken for a split colour */
+  --p1:#6B5B95; --p2:#2F7C82; --p3:#8A4A6B;
+  --shadow:0 1px 2px rgba(22,24,29,.06),0 8px 24px rgba(22,24,29,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#101216; --frame:#0A0B0E;
+    --surface:#181B21; --surface-2:#21252D; --surface-3:#2A2F38;
+    --ink:#EDEFF3; --ink-2:#A2AAB8; --ink-3:#6E7684;
+    --line:#2A2F38; --line-2:#39404B;
+    --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
+    --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+    --upper:#A98AE2; --lower:#B7C85A; --full:#E58A5F;
+    --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101216; --frame:#0A0B0E;
+  --surface:#181B21; --surface-2:#21252D; --surface-3:#2A2F38;
+  --ink:#EDEFF3; --ink-2:#A2AAB8; --ink-3:#6E7684;
+  --line:#2A2F38; --line-2:#39404B;
+  --accent:#E85B47; --on-accent:#16181D; --on-chip:#101216;
+  --push:#E85B47; --pull:#5B8DEF; --legs:#E0A93F; --cardio:#4FBF83; --other:#8A93A2;
+  --upper:#A98AE2; --lower:#B7C85A; --full:#E58A5F;
+  --p1:#9E8FCB; --p2:#4FA8AE; --p3:#C07A99;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--frame);color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+#app{max-width:420px;margin:0 auto;min-height:100vh;min-height:100dvh;background:var(--bg);
+  position:relative;display:flex;flex-direction:column;overflow:hidden}
+/* phone: pin the app to the real viewport so only .scroll scrolls and the
+   action bar never rides below the browser's collapsing URL bar */
+@media (max-width:519px){
+  html,body{height:100%}
+  #app{height:100vh;height:100dvh}
+}
+@media (min-width:520px){
+  body{padding:24px 0}
+  #app{min-height:min(880px,calc(100vh - 48px));height:min(880px,calc(100vh - 48px));
+    border-radius:22px;box-shadow:var(--shadow);border:1px solid var(--line)}
+}
+/* #view holds the header + the scroll region; it has to be a flex column of its
+   own, and both it and .scroll need min-height:0 or they refuse to shrink below
+   their content and nothing scrolls. */
+#view{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.scroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;padding:0 16px 24px}
+
+.eyebrow{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+h1,h2,h3{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  letter-spacing:.01em;text-wrap:balance}
+h1{font-size:30px;line-height:1.05;text-transform:uppercase}
+h2{font-size:21px;line-height:1.1}
+.num{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+header{padding:18px 16px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.back{display:flex;align-items:center;gap:6px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:13px;color:var(--ink-2);
+  padding:6px 8px;margin:-6px -8px}
+.back:hover{color:var(--accent)}
+.headacts{display:flex;align-items:center;gap:10px}
+.shareicon{width:40px;height:40px;display:grid;place-items:center;border-radius:9px;
+  background:var(--surface-2);color:var(--ink);line-height:1}
+.shareicon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+.shareicon:hover{background:var(--surface-3);color:var(--accent)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 9px;border-radius:3px;color:var(--on-chip);background:var(--c);flex:none}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+[data-split="push"]{--c:var(--push)}
+[data-split="pull"]{--c:var(--pull)}
+[data-split="legs"]{--c:var(--legs)}
+[data-split="cardio"]{--c:var(--cardio)}
+[data-split="other"]{--c:var(--other)}
+[data-split="upper"]{--c:var(--upper)}
+[data-split="lower"]{--c:var(--lower)}
+[data-split="full"]{--c:var(--full)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:14px;display:block;width:100%;text-align:left}
+button.card{transition:border-color .12s,transform .06s}
+button.card:hover{border-color:var(--line-2)}
+button.card:active{transform:scale(.995)}
+.list{display:flex;flex-direction:column;gap:10px}
+.rowbetween{display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+.sessionmeta{color:var(--ink-3);font-size:13px;margin-top:6px}
+.exlist{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);
+  display:flex;flex-direction:column;gap:5px}
+.exline{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.exline b{font-weight:500;color:var(--ink)}
+.exline span{color:var(--ink-3);font-size:13px;white-space:nowrap}
+
+/* crew feed: Mine/Crew switch, and the person on a shared card */
+.seg{display:flex;gap:3px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:11px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;padding:8px 4px;border-radius:8px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.09em;font-size:13px;color:var(--ink-3)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);
+  box-shadow:0 1px 2px rgba(10,11,14,.13)}
+.who{display:flex;align-items:center;gap:9px;min-width:0}
+.avatar{width:32px;height:32px;flex:none;border-radius:50%;background:var(--p);
+  color:var(--on-chip);display:flex;align-items:center;justify-content:center;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;letter-spacing:.03em}
+.who .nm{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:18px;
+  text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .you{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);flex:none;
+  border:1px solid var(--line-2);border-radius:3px;padding:1px 4px}
+/* you are not one of the colours: an ink disc can't be mistaken for a split
+   the way an accent-red one reads as Push */
+[data-person="me"]{--p:var(--ink)}
+[data-person="p1"]{--p:var(--p1)}
+[data-person="p2"]{--p:var(--p2)}
+[data-person="p3"]{--p:var(--p3)}
+.fromline{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.social{margin-top:11px;padding-top:10px;border-top:1px solid var(--line);
+  display:flex;align-items:center;gap:6px}
+.act{display:inline-flex;align-items:center;gap:5px;padding:7px 10px;border-radius:8px;
+  background:var(--surface-2);color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.act:hover{color:var(--ink)}
+.act[aria-pressed="true"],.act[aria-expanded="true"]{color:var(--accent)}
+.act .n{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:11px}
+.act.grow{margin-left:auto;background:var(--surface-3);color:var(--ink)}
+.act.grow:hover{background:var(--accent);color:var(--on-accent)}
+.thread{margin-top:10px;display:flex;flex-direction:column;gap:9px}
+.cmt{display:flex;gap:8px;align-items:flex-start}
+.cmt .avatar{width:24px;height:24px;font-size:10px;margin-top:1px}
+.cmt .body{font-size:14px;line-height:1.45;min-width:0;color:var(--ink-2)}
+.cmt .body b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:13px;
+  text-transform:uppercase;letter-spacing:.04em;color:var(--ink);margin-right:6px}
+.cbox{display:flex;gap:8px}
+.cbox input{flex:1;min-width:0;height:40px;border-radius:9px;border:1px solid var(--line);
+  background:var(--surface-2);padding:0 12px;font-size:16px}
+.cbox input::placeholder{color:var(--ink-3)}
+.cbox button{flex:none;height:40px;padding:0 14px;border-radius:9px;background:var(--accent);
+  color:var(--on-accent);font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;font-size:13px}
+
+.bar{flex:none;position:sticky;bottom:0;z-index:4;
+  border-top:1px solid var(--line);background:var(--surface);
+  box-shadow:0 -10px 22px -14px rgba(10,11,14,.35);
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center}
+.tab{flex:1;padding:9px 4px;border-radius:9px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.09em;font-size:13px;color:var(--ink-3)}
+.tab[aria-current="true"]{color:var(--ink);background:var(--surface-2)}
+.btn{background:var(--accent);color:var(--on-accent);border-radius:10px;padding:12px 18px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.09em;font-size:15px;min-height:46px}
+.btn:active{filter:brightness(.94)}
+.btn.wide{flex:1}
+.btn.ghost{background:var(--surface-2);color:var(--ink)}
+.btn.link{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.orline{display:flex;align-items:center;gap:10px;margin:14px 0 10px;
+  font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;
+  letter-spacing:.09em;font-size:12px;color:var(--ink-3)}
+.orline::before,.orline::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.empty{text-align:center;color:var(--ink-3);padding:44px 20px;font-size:14px;line-height:1.6}
+
+/* the door: the only thing on screen until the server says who you are */
+.bootscreen{flex:1;background:#16181D}
+.gate{max-width:320px;margin:0 auto;padding:12vh 0 40px;text-align:center}
+.brandmark{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:36px;
+  line-height:1.05;text-transform:uppercase;letter-spacing:.03em}
+.brandmark s{display:block;text-decoration:none;height:4px;width:46px;margin:10px auto 0;
+  border-radius:2px;background:var(--accent)}
+.gatesub{color:var(--ink-2);font-size:13px;line-height:1.55;margin:16px 0 22px}
+.gateswap{color:var(--ink-3);font-size:12.5px;margin:14px 0 0;text-align:center}
+.link2{background:none;border:0;padding:0;color:var(--accent);font:inherit;
+  font-weight:600;cursor:pointer;text-decoration:underline}
+.gate .msg{text-align:center}
+/* the signed-in person, where the Data button used to be */
+/* a screen reached from the calendar stacks its back button over the title */
+header .back+h1{margin-top:8px}
+/* the crew roster: everyone with an account, whether they have shared or not */
+.roster{border:1px solid var(--line);background:var(--surface);border-radius:12px;
+  padding:12px 14px;margin-bottom:12px}
+.rosterrow{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:9px}
+.rosterrow .who{gap:7px}
+.rosterrow .avatar{width:28px;height:28px;font-size:12px}
+.rosterrow .nm{font-size:16px}
+.rosternote{margin:11px 0 0;color:var(--ink-3);font-size:12.5px;line-height:1.55}
+/* finding people, on the crew tab */
+.crewbar{display:flex;gap:8px;margin-bottom:12px}
+.crewbar .search{flex:1}
+.crewbar .btn{flex:none;width:auto;padding:0 16px;height:44px}
+.findlist{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.findrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--surface);padding:10px 12px}
+.findrow .at{display:block;color:var(--ink-3);font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.findrow .nm{line-height:1.15}
+.follow{flex:none;padding:7px 13px;border-radius:999px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;
+  background:var(--accent);color:#10121a;border:1px solid var(--accent)}
+.follow.on{background:transparent;color:var(--ink-2);border-color:var(--line)}
+.rosternote code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.exq{margin-bottom:12px}
+/* invites, on the profile screen */
+.invitenew{border:1px solid var(--accent);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.invitenew .fld{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.invlist{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.invrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--surface);padding:10px 12px}
+.invrow b{display:block;font-weight:600;font-size:13px}
+.invrow span{display:block;color:var(--ink-3);font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.invrow .act{flex:none;padding:6px 10px;border-radius:8px;background:var(--surface-2);
+  border:1px solid var(--line);font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:var(--ink-2)}
+.userbtn{display:flex;align-items:center;padding:4px 0;margin:0}
+.userbtn .who{position:relative}
+.userbtn .avatar{width:28px;height:28px;font-size:12px}
+.userbtn .nm{font-size:16px}
+.userbtn:hover .nm{color:var(--accent)}
+.notifybadge{position:absolute;top:-7px;left:18px;min-width:17px;height:17px;padding:0 4px;
+  box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--on-accent);
+  border:2px solid var(--bg);font:700 10px/13px ui-monospace,SFMono-Regular,Menlo,monospace;
+  text-align:center}
+.notice-list{display:flex;flex-direction:column;gap:8px}
+.notice{width:100%;display:flex;gap:11px;align-items:flex-start;text-align:left;padding:12px;
+  border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.notice.unread{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.notice .avatar{flex:none;width:31px;height:31px;font-size:11px}
+.notice-copy{min-width:0;flex:1;color:var(--ink-2);font-size:13px;line-height:1.4}
+.notice-copy b{color:var(--ink);font-weight:600}.notice-copy small{display:block;margin-top:4px;
+  color:var(--ink-3);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
+
+.datasec{margin-bottom:28px}
+.datasec p{margin:6px 0 12px;color:var(--ink-2);font-size:13px;line-height:1.55}
+.prefrow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  text-align:left;font-size:14px;font-weight:500}
+.prefstate{flex:none;min-width:38px;padding:4px 8px;border-radius:999px;text-align:center;
+  background:var(--surface-2);color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;
+  font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.prefrow[aria-pressed="true"] .prefstate{background:var(--accent);color:var(--on-accent)}
+.fld{display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:11px 12px;
+  background:var(--surface);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;
+  font-family:"Barlow",sans-serif;font-size:16px}
+.fld:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.msg{margin-top:10px;font-size:13px;line-height:1.5;color:var(--ink-2);min-height:1px}
+.msg.bad{color:var(--accent)}
+
+.livehead{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;margin-bottom:12px;border-left:3px solid var(--c)}
+.splitpick{margin-top:16px;position:relative}
+.splitlabel{display:block;margin-bottom:6px;font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.splitselect{position:relative}
+.splittrigger{width:100%;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;
+  border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2);text-align:left}
+.splittrigger:hover,.splittrigger[aria-expanded="true"]{border-color:var(--accent)}
+.splittrigger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.splitdot{width:10px;height:10px;border-radius:50%;background:var(--split-color);flex:none}
+.splitvalue{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17px;
+  letter-spacing:.02em;color:var(--ink)}
+.splitpick[data-split="push"]{--split-color:var(--push)}
+.splitpick[data-split="pull"]{--split-color:var(--pull)}
+.splitpick[data-split="legs"]{--split-color:var(--legs)}
+.splitpick[data-split="cardio"]{--split-color:var(--cardio)}
+.splitpick[data-split="other"]{--split-color:var(--other)}
+.splitpick[data-split="upper"]{--split-color:var(--upper)}
+.splitpick[data-split="lower"]{--split-color:var(--lower)}
+.splitpick[data-split="full"]{--split-color:var(--full)}
+.splitchev{width:16px;height:16px;margin-left:auto;color:var(--ink-3);flex:none;pointer-events:none;
+  transition:transform .16s ease}
+.splitchev path{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.splittrigger[aria-expanded="true"] .splitchev{transform:rotate(180deg)}
+.splitmenu{position:absolute;z-index:6;top:calc(100% + 6px);left:0;right:0;padding:6px;
+  background:var(--surface);border:1px solid var(--line-2);border-radius:10px;
+  box-shadow:0 12px 28px rgba(10,11,14,.18)}
+.splitmenu[hidden]{display:none}
+.splitoption{width:100%;min-height:42px;display:flex;align-items:center;gap:10px;padding:0 10px;
+  border:0;border-radius:7px;background:transparent;color:var(--ink-2);text-align:left}
+.splitoption:hover,.splitoption:focus-visible,.splitoption[aria-selected="true"]{
+  background:var(--surface-2);color:var(--ink)}
+.splitoption:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.splitoption .splitdot{background:var(--option-color)}
+.splitoption[data-split="push"]{--option-color:var(--push)}
+.splitoption[data-split="pull"]{--option-color:var(--pull)}
+.splitoption[data-split="legs"]{--option-color:var(--legs)}
+.splitoption[data-split="cardio"]{--option-color:var(--cardio)}
+.splitoption[data-split="other"]{--option-color:var(--other)}
+.splitoption[data-split="upper"]{--option-color:var(--upper)}
+.splitoption[data-split="lower"]{--option-color:var(--lower)}
+.splitoption[data-split="full"]{--option-color:var(--full)}
+.splitoption .splitoptionlabel{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;
+  letter-spacing:.04em}
+.splitcheck{margin-left:auto;color:var(--accent);font-size:17px;line-height:1;opacity:0}
+.splitoption[aria-selected="true"] .splitcheck{opacity:1}
+
+.excard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);
+  border-radius:12px;padding:14px;margin-bottom:10px}
+.exhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.exname{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1}
+.exhead h2{font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chartlink{display:inline-flex;align-items:center;gap:3px;flex:none;padding:4px 0;
+  color:var(--ink-2);font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase}
+.chartlink:hover{color:var(--accent)}
+.kill{color:var(--ink-3);font-size:20px;line-height:1;padding:4px 8px;margin:-4px -8px}
+.kill:hover{color:var(--accent)}
+
+.lastline{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lastlabel{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.ghostset{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:500;
+  padding:3px 7px;border-radius:5px;background:var(--surface-2);color:var(--ink-2);
+  border:1px dashed var(--line-2)}
+button.ghostset:hover{border-style:solid;border-color:var(--accent);color:var(--accent)}
+
+.sets{margin-top:12px;display:flex;flex-direction:column;gap:4px}
+.setrow{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;
+  padding:7px 8px;border-radius:8px;background:var(--surface-2)}
+.setno{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3)}
+.setval{font-family:"JetBrains Mono",monospace;font-size:15px;font-weight:500}
+.setval em{font-style:normal;color:var(--ink-3);font-size:12px;padding:0 3px}
+.pr{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em;
+  background:var(--accent);color:var(--on-accent);border-radius:3px;padding:2px 5px;margin-left:6px}
+
+.entry{margin-top:12px;display:grid;gap:8px;grid-template-columns:1fr 1fr auto}
+.entry.stack{grid-template-columns:repeat(3,1fr)}
+.entry.stack .addset{grid-column:1/-1;width:100%}
+.field{min-width:0}
+.field label{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stepper{display:flex;align-items:center;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:9px;overflow:hidden;height:46px}
+.stepper button{width:30px;height:100%;font-size:18px;color:var(--ink-2);font-weight:500;flex:none}
+.stepper button:hover{background:var(--surface-3);color:var(--ink)}
+.stepper input{flex:1;width:100%;min-width:0;border:0;background:transparent;text-align:center;
+  font-family:"JetBrains Mono",monospace;font-size:17px;font-weight:500;padding:0;
+  -moz-appearance:textfield}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.addset{height:46px;padding:0 16px;align-self:end}
+
+.scrim{position:absolute;inset:0;background:rgba(10,11,14,.5);opacity:0;pointer-events:none;
+  transition:opacity .18s;z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:var(--keyboard-inset);z-index:6;background:var(--surface);
+  border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  height:min(82%,calc(var(--sheet-vh) - 12px));
+  display:flex;flex-direction:column;
+  transform:translateY(101%);transition:transform .22s cubic-bezier(.3,.8,.4,1)}
+body.sheet-open #scrim{opacity:1;pointer-events:auto}
+body.sheet-open .sheet{transform:translateY(0)}
+.sheet header{padding:14px 16px 10px;display:block}
+.search{width:100%;height:44px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface-2);padding:0 14px;font-size:16px}
+.search::placeholder{color:var(--ink-3)}
+.sheetscroll{overflow-y:auto;padding:4px 10px 20px}
+.pickitem{width:100%;display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:9px;
+  text-align:left;font-size:15px}
+.pickitem:hover{background:var(--surface-2)}
+.pickitem small{margin-left:auto;color:var(--ink-3);font-size:12px;white-space:nowrap;padding-left:8px}
+.grouphead{padding:14px 8px 5px}
+
+/* confirm dialog. Not window.confirm: a native modal blocks the whole page
+   (and the artifact iframe) until it is dismissed. */
+#dscrim{z-index:7}
+body.dialog-open #dscrim{opacity:1;pointer-events:auto}
+.dialog{position:absolute;left:16px;right:16px;top:50%;z-index:8;background:var(--surface);
+  border:1px solid var(--line);border-radius:16px;padding:18px 18px 14px;box-shadow:var(--shadow);
+  opacity:0;pointer-events:none;transform:translateY(-46%) scale(.97);
+  transition:opacity .16s,transform .16s}
+body.dialog-open .dialog{opacity:1;pointer-events:auto;transform:translateY(-50%) scale(1)}
+.dialog h2{font-size:22px;text-transform:uppercase}
+.dialog p{margin:9px 0 16px;font-size:14px;line-height:1.55;color:var(--ink-2)}
+.dialog p b{color:var(--ink);font-family:"JetBrains Mono",monospace;font-weight:700}
+.dlgbtns{display:flex;gap:8px}
+.dlgbtns .btn{flex:1;padding:12px 8px}
+
+.calwrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:12px 12px 10px;margin-bottom:12px}
+.calmonthhead{display:flex;align-items:center;justify-content:space-between;padding:2px 0 9px}
+.calmonthhead button{display:flex;align-items:center;gap:7px;padding:7px 2px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;
+  text-transform:uppercase;letter-spacing:.04em}
+.calmonthhead button:hover{color:var(--accent)}
+.calmonthhead .jumpmark{font-size:10px;color:var(--ink-3)}
+.calmonthhead .current{font-family:"Barlow Condensed",sans-serif;font-weight:600;
+  font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}
+.calviewport{touch-action:pan-y;user-select:none}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.caldow{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:10px;
+  letter-spacing:.1em;color:var(--ink-3);text-align:center;padding-bottom:2px}
+.cell{height:42px;border-radius:8px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;font-family:"JetBrains Mono",monospace;font-size:12px;
+  color:var(--ink-3);padding:0}
+.cell.pad{visibility:hidden}
+.cell.out{color:color-mix(in srgb,var(--ink-3) 55%,transparent)}
+.cell.out.on{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
+.cell.on{background:var(--surface-2);color:var(--ink);font-weight:700}
+.cell.today{box-shadow:inset 0 0 0 1.5px var(--line-2)}
+.cell.live{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.dots{display:flex;gap:3px;height:6px;align-items:center}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--c);display:block}
+.calfoot{display:flex;gap:14px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.calfoot div{font-size:13px;color:var(--ink-3)}
+.calfoot b{font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--ink);font-size:15px;
+  display:block;margin-bottom:1px}
+.monthsessions{margin-top:10px}
+.loghead{margin:18px 0 10px;font-size:19px;text-transform:uppercase;letter-spacing:.04em}
+.logmonth{margin-bottom:12px}
+.logmonthtoggle{width:100%;display:flex;align-items:center;justify-content:space-between;
+  min-height:44px;padding:8px 2px;border-bottom:1px solid var(--line);text-align:left}
+.logmonthtoggle .label{font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  font-size:17px;text-transform:uppercase;letter-spacing:.04em}
+.logmonthtoggle .meta{display:flex;align-items:center;gap:9px;color:var(--ink-3);
+  font-family:"JetBrains Mono",monospace;font-size:11px}
+.logmonthtoggle .chev{font-family:"Barlow",sans-serif;font-size:10px;transition:transform .15s}
+.logmonthtoggle[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.logmonth .list{margin-top:9px}
+.logmonth .list[hidden]{display:none}
+.monthpickerhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.monthpickerhead h2{font-size:22px}
+.monthpickerhead button{width:38px;height:38px;border-radius:8px;background:var(--surface-2);
+  font-size:18px}
+.monthpickgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.monthpickgrid button{min-height:42px;border:1px solid var(--line);border-radius:8px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;text-transform:uppercase;
+  letter-spacing:.06em;font-size:13px}
+.monthpickgrid button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.monthpickgrid button[aria-current="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.monthpickgrid button:disabled{opacity:.28;cursor:default}
+.sharepreview{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-2)}
+.sharepreview>p{margin:0 0 10px;color:var(--ink);font-size:14px}
+.sharecard{padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.sharecard h2{font-size:17px}
+.sharecard .chip{font-size:10px}
+.sharecard .exlist{margin-top:8px;padding-top:8px}
+.sharecard .exline{font-size:12px}
+.sharecard .exline span{font-size:11px}
+.statrow{display:flex;gap:10px;margin-bottom:12px}
+.stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 12px}
+.stat .v{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:700;line-height:1.15;margin-top:3px}
+.stat .v s{text-decoration:none;font-size:12px;color:var(--ink-3);font-weight:400}
+figure{margin:0 0 12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 12px 6px}
+figcaption{padding:0 2px 10px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+figcaption b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:15px;
+  text-transform:uppercase;letter-spacing:.04em}
+figcaption span{font-size:12px;color:var(--ink-3);text-align:right}
+.chart{width:100%;height:auto;display:block}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .lbl{fill:var(--ink-3);font-family:"JetBrains Mono",monospace;font-size:9px}
+.chart .ser{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:var(--accent);opacity:.10}
+.chart .pt{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.chart .barmark{fill:var(--cardio)}
+.chart .endlbl{fill:var(--ink);font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700}
+.hist{display:flex;flex-direction:column;gap:8px}
+.histday{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);
+  border-radius:11px;padding:11px 13px}
+.histday .rowbetween{margin-bottom:8px}
+.histday .d{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:15px;
+  text-transform:uppercase;letter-spacing:.04em}
+.histsets{display:flex;flex-wrap:wrap;gap:5px}
+.histsets span{font-family:"JetBrains Mono",monospace;font-size:12px;padding:3px 7px;
+  border-radius:5px;background:var(--surface-2);color:var(--ink-2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div id="app">
+  <div id="view"></div>
+  <div class="bar" id="bar"></div>
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet">
+    <header><input class="search" id="q" placeholder="Search or name a new exercise" autocomplete="off"></header>
+    <div class="sheetscroll" id="picklist"></div>
+  </div>
+  <div class="scrim" id="dscrim"></div>
+  <div class="dialog" id="dialog" role="alertdialog" aria-modal="true"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- exercise kinds ----------
+   Every exercise is one of four kinds; a set is an array of numbers
+   matching that kind's field list, so lifting and cardio share all the
+   same plumbing (history, prefill, last-time chips, charts).           */
+var KINDS={
+  lift:{
+    fields:[{label:"Reps",step:1,unit:"reps"},{label:"Weight (lb)",step:5,unit:"lb"}],
+    metric:"1RM"
+  },
+  machine:{
+    fields:[{label:"Minutes",step:5,unit:"min"},{label:"Level",step:1,unit:"lvl"}],
+    metric:"time"
+  },
+  tread:{
+    fields:[{label:"Minutes",step:5,unit:"min"},{label:"Speed (mph)",step:.5,unit:"mph"},
+            {label:"Incline %",step:.5,unit:"%"}],
+    metric:"time"
+  },
+  hold:{
+    fields:[{label:"Seconds",step:5,unit:"sec"},{label:"Weight (lb, optional)",step:5,unit:"lb"}],
+    metric:"time"
+  }
+};
+var CARDIO_LIB=[
+  {name:"Stationary Bike",kind:"machine"},
+  {name:"Elliptical",kind:"machine"},
+  {name:"Treadmill Walk",kind:"tread"},
+  {name:"Treadmill Run",kind:"tread"},
+  {name:"Rower",kind:"machine"},
+  {name:"Stair Climber",kind:"machine"}
+];
+var LIB_KIND={}; CARDIO_LIB.forEach(function(c){LIB_KIND[c.name]=c.kind;});
+function kindOf(x){return x.kind||LIB_KIND[x.name]||"lift";}
+function isCardio(k){return k==="machine"||k==="tread";}
+
+/* Library of movements, classified. Anything you've already logged is
+   pulled out of here automatically, so the picker never lists it twice. */
+var EXTRA = {
+  push:["Barbell Bench Press","Dumbbell Bench Press","Incline Dumbbell Press","Decline Bench",
+        "Chest Press","Cable Fly","Dumbbell Fly","Dips","Push Up",
+        "Overhead Press","Seated Dumbbell Press","Machine Shoulder Press",
+        "Cable Lateral Raise","Front Raise","Upright Row",
+        "Close Grip Bench","Skullcrusher","Overhead Tricep Extension",
+        "Dumbbell Tricep Extension","Tricep Kickback"],
+  pull:["Deadlift","Barbell Row","Pendlay Row","T-Bar Row","Chest Supported Row",
+        "One-Arm Dumbbell Row","Dumbbell Reverse Fly","Dumbbell Shrug",
+        "Pull Up","Chin Up","Straight Arm Pulldown","Dumbbell Pullover","Face Pull","Shrug",
+        "Barbell Curl","Hammer Curl","Incline Dumbbell Curl","Cable Curl","Concentration Curl"],
+  legs:["Leg Press","Hack Squat","Front Squat","Goblet Squat","Dumbbell Squat",
+        "Sumo Dumbbell Squat","Bulgarian Split Squat","Walking Lunge","Dumbbell Lunge",
+        "Reverse Lunge","Step Up","Dumbbell Step Up",
+        "Romanian Deadlift","Dumbbell Romanian Deadlift","Good Morning","Hip Thrust","Glute Bridge",
+        "Seated Leg Curl","Seated Calf Raise","Adductor Machine","Abductor Machine"],
+  other:["Plank","Side Plank","Ab Wheel","Hanging Leg Raise","Cable Crunch",
+         "Russian Twist","Sit Up","Pallof Press","Back Extension",
+         "Farmer Carry","Dumbbell Thruster","Renegade Row"]
+};
+LIB_KIND["Plank"]="hold"; LIB_KIND["Side Plank"]="hold";
+/* ---------- crew ----------
+   Who you are, and who the crew is, both come from the server now: `SY.user`
+   for you, and the feed items themselves for everyone else. There are no
+   fixture people any more — an empty crew tab means nobody has shared yet,
+   which is the truth rather than a decorated placeholder. */
+var FEEDP={};              /* user id -> {id,name,person} , built from the feed */
+/* Person colours are deliberately off the bumper-plate hues so a disc never
+   reads as a split. Assigned by sorted position rather than by hashing the id:
+   there are only three slots, and a hash happily drops a three-person family
+   into the same colour. Sorted order is stable across devices because the feed
+   is, and it guarantees distinct colours for the first three people. */
+function buildPeople(items,people,crew){
+  var names={}, ids=[];
+  function add(id,name){
+    if(SY.user&&id===SY.user.id) return;      /* you are never a crew colour */
+    if(!names[id]){ names[id]=name||id; ids.push(id); }
+  }
+  /* the roster first, so a colour is fixed by who is on the crew rather than
+     by who happens to have shared today */
+  if(crew) crew.forEach(function(c){ add(c.id,c.name); });
+  items.forEach(function(x){ add(x.who,x.name); });
+  /* the feed rows only name people who SHARED; `people` also covers someone
+     who has only ever liked or commented, who would otherwise render as a
+     raw row id */
+  if(people) Object.keys(people).forEach(function(id){ add(id,people[id].name); });
+  ids.sort();
+  var map={};
+  ids.forEach(function(id,i){
+    map[id]={id:id,name:names[id],person:"p"+((i%3)+1)};
+  });
+  return map;
+}
+var GROUP_LABEL={push:"Push movements",pull:"Pull movements",
+  legs:"Legs movements",other:"Core &amp; other"};
+var SPLITS=[["push","Push"],["pull","Pull"],["legs","Legs"],["upper","Upper"],
+  ["lower","Lower"],["full","Full Body"],["cardio","Cardio"],["other","Other"]];
+var SPLIT_NAME={push:"Push",pull:"Pull",legs:"Legs",upper:"Upper",lower:"Lower",
+  full:"Full Body",cardio:"Cardio",other:"Other"};
+/* The real current day, in the user's own timezone, recomputed per call so a
+   page left open overnight rolls over. Deliberately NOT toISOString(): that is
+   UTC, which files a 7pm workout in the US under tomorrow's date. */
+function p2(n){return (n<10?"0":"")+n;}
+function today(){var d=new Date();
+  return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
+
+/* ---------- state ----------
+   The store is keyed by ACCOUNT: "racklog.proto.v2:<user id>". This is a
+   family app on shared phones, so a bare per-device key meant the next person
+   to pick up the handset saw — and on their next sync uploaded — the
+   previous person's workouts. Namespacing is what makes "Mine" mean mine.
+
+   The bare key is still the signed-out / standalone store: file://, the
+   published artifact, the tests. The first account to sign in on a device
+   that has one ADOPTS it, once, so nobody loses history logged before
+   accounts existed. See HANDOFF trap 5 before changing either key. */
+var KEY="racklog.proto.v2", SKEY="racklog.sync.v1";
+var KEYNOW=KEY, SKEYNOW=SKEY;
+function storeKey(uid){ return uid?KEY+":"+uid:KEY; }
+function syncKey(uid){ return uid?SKEY+":"+uid:SKEY; }
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+/* A new device starts EMPTY. Signing in pulls your own history down; the
+   crew tab fills from the server. Nothing is invented locally. */
+function blank(){ return {sessions:[],live:null,tab:"history",home:"mine",
+  month:today().slice(0,7),social:{},autoShare:true}; }
+var S=blank(), view={name:"home"}, openThread=null;
+
+/* Swap the whole local store over to one account. Called from syncBoot, and
+   again on sign-in and sign-out — nothing else may touch KEYNOW. */
+function loadStore(uid){
+  KEYNOW=storeKey(uid); SKEYNOW=syncKey(uid);
+  var raw=lsGet(KEYNOW), sy=lsGet(SKEYNOW), adopt=false;
+  if(!raw&&uid){ raw=lsGet(KEY); sy=lsGet(SKEY); adopt=!!(raw&&raw.sessions); }
+  S=(raw&&raw.sessions)?raw:blank();
+  /* Month selection is navigation state, not account data. An old saved month
+     must not make a fresh launch claim that last month is current. */
+  S.month=today().slice(0,7);
+  /* filled in place rather than by bumping the key, which would wipe real
+     logged workouts (HANDOFF trap 5). Do the same for the next field. */
+  if(!S.social) S.social={};
+  if(S.autoShare===undefined) S.autoShare=true;
+  /* the calendar is home: every launch opens there, whatever tab you left on,
+     and on Mine rather than the crew feed */
+  S.tab="history"; S.home="mine";
+  SY.since=(sy&&sy.since)||0; SY.shadow=(sy&&sy.shadow)||{};
+  if(adopt){ saveLocal(); saveSync(); lsDel(KEY); lsDel(SKEY); }
+}
+/* Wipe one account's local copy. Only ever called on sign-out, and only once
+   everything has reached the server — see signOut(). */
+function forget(uid){ lsDel(storeKey(uid)); lsDel(syncKey(uid)); }
+
+/* saveLocal persists; save() also schedules a sync. Likes and comments use
+   saveLocal, because they post themselves and then ask for the sync — a
+   debounced pull firing before the POST landed would revert them on screen. */
+function saveLocal(){ try{ localStorage.setItem(KEYNOW,JSON.stringify(S)); }catch(e){} }
+function save(){ saveLocal(); syncSoon(); }
+
+/* ---------- sync ----------
+   The app works with no server at all: from file://, from the artifact, or
+   signed out. API stays false in those cases and every function below is a
+   no-op, which is what keeps rack-log.html standalone.
+
+   Nothing here tracks dirty state at the call sites. Instead SY.shadow holds
+   the last JSON we know the server has, per session id, and dirtyOps() diffs
+   against it. That is why none of the fifteen mutation paths had to change:
+   they all end in save(), and save() is enough. */
+var SY={since:0,shadow:{},user:null,google:false,feed:[],crew:[],
+        counts:{following:0,followers:0},notifications:[],unread:0};
+var PUSH={enabled:false,busy:false,msg:""};
+function saveSync(){ try{ localStorage.setItem(SKEYNOW,
+  JSON.stringify({since:SY.since,shadow:SY.shadow})); }catch(e){} }
+
+var API=null;              /* null = not checked, false = no server, true = server */
+/* An invite link is a real URL -- it gets texted to people -- so the code
+   arrives on location.pathname, not in a field somebody types. */
+var JOIN={code:"",state:"",from:null,error:""};
+/* which half of the front door is showing. "new" is the default behind an
+   invite link -- somebody following one usually does not have an account. */
+var GATE={mode:"in"};
+function gateMode(m){GATE.mode=m;render();}
+var INV={list:null,fresh:null,msg:""};
+/* Finding somebody to follow. `people` is null until a search has answered,
+   which is what tells "searching" apart from "nobody matches". */
+var FIND={q:"",people:null};
+var findSeq=0;
+function joinCode(){
+  if(typeof location==="undefined") return "";
+  var m=String(location.pathname||"").match(/^\/join\/([a-f0-9]{32})$/);
+  return m?m[1]:"";
+}
+/* Checked before the form is drawn, so an expired link says so instead of
+   asking a stranger to pick a username and then refusing them. */
+function checkInvite(){
+  JOIN.code=joinCode();
+  if(!JOIN.code) return;
+  /* somebody arriving on a link is usually new here */
+  if(!SY.user) GATE.mode="new";
+  JOIN.state="checking";
+  apiFetch("/api/invite/"+JOIN.code).then(function(j){
+    JOIN.state="ok"; JOIN.from=j.from||null; render();
+  },function(e){
+    JOIN.state="bad"; JOIN.error=(e&&e.message)||"That invite link is not valid."; render();
+  });
+}
+var syncing=false, syncMsg="", syncTimer=null;
+
+/* key order is fixed here so a round trip never looks like a change and
+   re-uploads itself on every sync */
+function sjson(x){ return JSON.stringify({id:x.id,date:x.date,split:x.split,
+  ex:x.ex,shared:!!x.shared,from:x.from||null}); }
+function idxOf(id){ for(var i=0;i<S.sessions.length;i++)
+  if(S.sessions[i].id===id) return i; return -1; }
+
+function apiFetch(path,opts){
+  opts=opts||{}; opts.credentials="same-origin"; opts.headers=opts.headers||{};
+  if(opts.body) opts.headers["Content-Type"]="application/json";
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok){ var e=new Error(j.error||("HTTP "+r.status)); e.status=r.status; throw e; }
+      return j; });
+  });
+}
+/* Nothing real renders until this answers: API===null draws the splash, and
+   API===true with no user draws the door. WHICH store to open is not knowable
+   until /api/me says who you are, which is why S starts blank and is loaded
+   here rather than at parse time. */
+function syncBoot(){
+  var solo=function(){ API=false; loadStore(null); render(); };
+  if(typeof fetch!=="function"||typeof location==="undefined"||location.protocol==="file:")
+    return solo();
+  apiFetch("/api/me").then(function(j){
+    API=true; SY.user=j.user||null; SY.google=!!j.google;
+    loadStore(SY.user?SY.user.id:null);
+    render();
+    /* checked either way now: an invite link means something to somebody who
+       is already signed in, where it used to mean nothing */
+    if(SY.user) sync();
+    checkInvite();
+  },solo);
+}
+function syncSoon(){
+  if(API!==true||!SY.user||typeof setTimeout!=="function") return;
+  if(syncTimer&&typeof clearTimeout==="function") clearTimeout(syncTimer);
+  syncTimer=setTimeout(function(){ syncTimer=null; sync(); },1200);
+}
+function dirtyOps(){
+  var ops=[], seen={};
+  S.sessions.forEach(function(x){ seen[x.id]=1; var j=sjson(x);
+    if(SY.shadow[x.id]!==j) ops.push({op:"put",id:x.id,body:x,j:j}); });
+  Object.keys(SY.shadow).forEach(function(id){
+    if(!seen[id]) ops.push({op:"del",id:id}); });
+  return ops;
+}
+/* returns the round trip, so a caller -- and the test suite -- can wait on it */
+function sync(){
+  if(API!==true||!SY.user||syncing) return Promise.resolve();
+  syncing=true;
+  var ops=dirtyOps(), pending={}, chain=Promise.resolve();
+  ops.forEach(function(o){ pending[o.id]=1; chain=chain.then(function(){
+    var u="/api/sessions/"+encodeURIComponent(o.id);
+    return o.op==="put"
+      ? apiFetch(u,{method:"PUT",body:JSON.stringify(o.body)}).then(function(){ SY.shadow[o.id]=o.j; })
+      : apiFetch(u,{method:"DELETE"}).then(function(){ delete SY.shadow[o.id]; });
+  });});
+  return chain.then(function(){ return apiFetch("/api/sessions?since="+SY.since); })
+    .then(function(j){
+      var changed=false;
+      (j.sessions||[]).forEach(function(r){
+        if(pending[r.id]) return;       /* a local edit we just pushed wins */
+        var i=idxOf(r.id);
+        if(r.deleted){ if(i>=0){ S.sessions.splice(i,1); changed=true; }
+          delete SY.shadow[r.id]; return; }
+        var clean={id:r.id,date:r.date,split:r.split,ex:r.ex};
+        if(r.shared) clean.shared=true;
+        if(r.from) clean.from=r.from;
+        var j2=sjson(clean);
+        if(i<0){ S.sessions.push(clean); changed=true; }
+        else if(sjson(S.sessions[i])!==j2){ S.sessions[i]=clean; changed=true; }
+        SY.shadow[r.id]=j2;
+      });
+      SY.since=j.now||SY.since; syncMsg=""; saveSync();
+      if(changed) saveLocal();
+      return apiFetch("/api/feed").then(function(f){
+        SY.feed=f.items||[];
+        SY.crew=f.crew||[];
+        SY.counts=f.counts||{following:0,followers:0};
+        SY.unread=Number(f.unread||0);
+        /* The server owns engagement now. S.social is a cache of what it last
+           said, kept only so the feed still draws while offline; it is
+           replaced wholesale, never merged. */
+        if(f.social) S.social=f.social;
+        FEEDP=buildPeople(SY.feed,f.people,SY.crew);
+        saveLocal();
+        syncing=false;
+        /* never re-render a session in progress: it would wipe the stepper
+           values that have been typed but not added yet */
+        if(view.name!=="session") render();
+      },function(){ syncing=false;
+        if((changed||view.name==="data")&&view.name!=="session") render(); });
+    },function(e){
+      syncing=false; saveSync();
+      if(e&&e.status===401){ SY.user=null; syncMsg="Signed out. Sign in again to sync."; }
+      else syncMsg="Offline. Your workouts are safe on this device, and go up "+
+        "on their own when you are back.";
+      if(view.name==="data") render();
+    });
+}
+/* Both doors end the same way, and an invite link may have brought you to
+   either of them -- so the code is spent, the address bar is cleaned, and the
+   app opens, in one place rather than three. */
+function afterAuth(){
+  return function(j){
+    SY.user=j.user; syncMsg=""; JOIN.code=""; JOIN.state=""; GATE.mode="in";
+    loadStore(j.user.id); openThread=null; view={name:"home"};
+    stripJoin();
+    render(); sync();
+  };
+}
+function authFail(box,fallback){
+  return function(e){ msg(box,(e&&e.message)||fallback,true); };
+}
+/* the code is spent the moment it is used; it has no business sitting in
+   browser history or in a screenshot of the address bar */
+function stripJoin(){
+  if(typeof location==="undefined"||!/^\/join\//.test(String(location.pathname||""))) return;
+  if(typeof history!=="undefined"&&history.replaceState)
+    try{ history.replaceState(null,"","/"); }catch(e){}
+}
+function signIn(){
+  var n=document.getElementById("loginname"), k=document.getElementById("loginpass");
+  var name=n?String(n.value||"").trim().toLowerCase():"", pass=k?String(k.value||""):"";
+  if(!name||!pass) return msg("authmsg","Enter your username and password.",true);
+  msg("authmsg","Signing in\u2026",false);
+  /* an invite in hand is spent AFTER signing in, by /api/invite/<code>/accept:
+     there is no account to make, only the two follows to write */
+  var code=JOIN.code;
+  apiFetch("/api/login",{method:"POST",body:JSON.stringify({username:name,password:pass})})
+    .then(function(j){
+      if(!code) return afterAuth()(j);
+      /* the follow is a nicety; failing it must not strand somebody who is
+         now signed in, so both paths open the app */
+      return apiFetch("/api/invite/"+encodeURIComponent(code)+"/accept",{method:"POST"})
+        .then(function(){ afterAuth()(j); },function(){ afterAuth()(j); });
+    }, authFail("authmsg","Couldn\u2019t sign in."));
+}
+function createAccount(){
+  var d=document.getElementById("newdisplay"), n=document.getElementById("loginname"),
+      k=document.getElementById("loginpass");
+  var display=d?String(d.value||"").trim():"",
+      name=n?String(n.value||"").trim().toLowerCase():"", pass=k?String(k.value||""):"";
+  if(!display) return msg("authmsg","Enter the name you want on your workouts.",true);
+  if(!/^[a-z0-9][a-z0-9._]{2,19}$/.test(name))
+    return msg("authmsg","Usernames are 3 to 20 characters: letters, numbers, dots "+
+      "and underscores.",true);
+  if(pass.length<8) return msg("authmsg","Passwords need at least 8 characters.",true);
+  msg("authmsg","Creating your account\u2026",false);
+  var body={name:display,username:name,password:pass};
+  if(JOIN.code) body.code=JOIN.code;
+  apiFetch("/api/signup",{method:"POST",body:JSON.stringify(body)})
+    .then(afterAuth(), authFail("authmsg","Couldn\u2019t create that account."));
+}
+/* Sign-out has to leave the handset clean, because the next person to sign in
+   is a different member of the family. Order matters: flush what is queued,
+   drop the server token, and only then delete this account's local copy. If
+   the flush did not clear — offline, or the server refused — the copy STAYS,
+   because losing a logged workout is worse than leaving it on disk under a
+   key no other account opens. */
+/* A live workout is not in S.sessions, so it never syncs -- signing out would
+   wipe it with the rest of the local store and nothing on the server would
+   have it. Same dialog as Cancel, naming the same cost. */
+function askSignOut(){
+  var l=S.live, n=0;
+  if(!l) return signOut();
+  l.ex.forEach(function(x){n+=x.sets.length;});
+  confirmDialog("Sign out mid-workout?",
+    n ? "Your live "+SPLIT_NAME[l.split]+" workout has <b>"+n+"</b> set"+(n===1?"":"s")+
+        " logged. It has not been saved, and signing out clears this device."
+      : "Your live "+SPLIT_NAME[l.split]+" workout hasn’t been saved. Signing out clears it.",
+    "Sign out anyway","Keep logging",signOut);
+}
+function signOut(){
+  var uid=SY.user?SY.user.id:null;
+  var after=function(clean){
+    var done=function(){
+      if(clean&&uid) forget(uid);
+      SY.user=null; SY.feed=[]; SY.crew=[]; FEEDP={}; SY.since=0; SY.shadow={};
+      SY.counts={following:0,followers:0}; FIND={q:"",people:null};
+      syncMsg=clean?"":"Some changes hadn\u2019t uploaded yet, so they were kept on this device.";
+      S=blank(); KEYNOW=storeKey(null); SKEYNOW=syncKey(null);
+      openThread=null; view={name:"home"}; render();
+    };
+    return apiFetch("/api/logout",{method:"POST"}).then(done,done);
+  };
+  /* returns the round trip, so a caller -- and the test suite -- can wait */
+  return sync().then(function(){ return after(dirtyOps().length===0); },
+                     function(){ return after(false); });
+}
+
+/* ---------- helpers ---------- */
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function jstr(s){return esc(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");}
+function fmt(n){return Number.isInteger(n)?n:Math.round(n*10)/10;}
+function e1rm(r,w){return w*(1+r/30);}
+function best(sets){var b=null;sets.forEach(function(s){var v=e1rm(s[0],s[1]);
+  if(!b||v>b.v)b={v:v,r:s[0],w:s[1]};});return b;}
+function heaviest(sets){var b=null;sets.forEach(function(s){if(!b||s[1]>b[1])b=s;});return b;}
+function minutes(sets){var m=0;sets.forEach(function(s){m+=s[0]||0;});return m;}
+function seconds(sets){var n=0;sets.forEach(function(s){n+=s[0]||0;});return n;}
+function holdTime(n){return n>=60?(Math.floor(n/60)+"m "+(n%60?n%60+"s":"")).trim():n+" sec";}
+function topLevel(sets){var l=0;sets.forEach(function(s){l=Math.max(l,s[1]||0);});return l;}
+function hhmm(m){return m>=60?(Math.floor(m/60)+"h "+(m%60?(m%60)+"m":"")).trim():m+" min";}
+function dstr(d,long){var dt=new Date(d+"T12:00:00");
+  return dt.toLocaleDateString("en-US",long?{weekday:"long",month:"long",day:"numeric"}
+    :{weekday:"short",month:"short",day:"numeric"});}
+function ago(d){var n=Math.round((new Date(today()+"T12:00:00")-new Date(d+"T12:00:00"))/864e5);
+  return n<=0?"today":n===1?"yesterday":n+" days ago";}
+function sorted(){return S.sessions.slice().sort(function(a,b){return b.date.localeCompare(a.date);});}
+function historyOf(name){var out=[];
+  sorted().forEach(function(s){s.ex.forEach(function(x){
+    if(x.name===name&&x.sets.length)
+      out.push({sid:s.id,date:s.date,split:s.split,sets:x.sets,kind:kindOf(x),
+        exSplit:x.split||null});});});
+  return out;}
+function priorTo(name,s){var h=historyOf(name),i;
+  for(i=0;i<h.length;i++) if(h[i].sid!==s.id && h[i].date<=s.date) return h[i];
+  return null;}
+function exerciseIndex(){var m=new Map();
+  sorted().forEach(function(s){s.ex.forEach(function(x){
+    if(!x.sets.length)return;
+    var k=kindOf(x);
+    /* an exercise carries its own classification; older entries fall back
+       to the split of the day they were logged on */
+    var sp=x.split||(isCardio(k)?"cardio":s.split);
+    if(!m.has(x.name))m.set(x.name,{name:x.name,split:sp,kind:k,last:s.date,n:0,top:0,mins:0,secs:0});
+    var e=m.get(x.name); e.n++;
+    if(isCardio(k)) e.mins+=minutes(x.sets);
+    else if(k==="hold") e.secs+=seconds(x.sets);
+    else e.top=Math.max(e.top,best(x.sets).v);});});
+  return m;}
+/* ---------- month helpers ---------- */
+function ym(d){return d.slice(0,7);}
+function shiftMonth(m,n){
+  var y=+m.slice(0,4), mo=+m.slice(5,7)-1+n;
+  y+=Math.floor(mo/12); mo=((mo%12)+12)%12;
+  return y+"-"+String(mo+1).padStart(2,"0");}
+function monthLabel(m){
+  return new Date(m+"-01T12:00:00").toLocaleDateString("en-US",{month:"long",year:"numeric"});}
+function daysIn(m){return new Date(+m.slice(0,4),+m.slice(5,7),0).getDate();}
+function firstDow(m){return new Date(m+"-01T12:00:00").getDay();}
+function inMonth(m){return sorted().filter(function(s){return ym(s.date)===m;});}
+function earliestMonth(){
+  var ms=S.sessions.map(function(s){return ym(s.date);}).sort();
+  return ms.length?ms[0]:ym(today());}
+function calendarStartMonth(){
+  var rolling=shiftMonth(ym(today()),-11), first=earliestMonth();
+  return first<rolling?first:rolling;}
+
+/* ---------- crew helpers ---------- */
+function meId(){ return SY.user?SY.user.id:"me"; }
+function personOf(id){
+  if(SY.user&&id===SY.user.id)
+    return {id:id,name:SY.user.name,person:"me"};   /* you are --ink, never --accent */
+  return FEEDP[id] || {id:id,name:id,person:"p1"};}
+function initials(n){
+  return n.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join("").toUpperCase();}
+function firstName(n){return n.split(/\s+/)[0];}
+function plural(n,w){return n+" "+w+(n===1?"":"s");}
+/* Search stays exact for short fragments, but forgives one typo in a longer
+   word: "dumbell" finds "dumbbell" without making "row" match everything. */
+function oneEditApart(a,b){
+  if(Math.abs(a.length-b.length)>1)return false;
+  var i=0,j=0,diffs=0;
+  while(i<a.length&&j<b.length){
+    if(a.charAt(i)===b.charAt(j)){i++;j++;continue;}
+    if(++diffs>1)return false;
+    if(a.length>b.length)i++; else if(b.length>a.length)j++; else{i++;j++;}
+  }
+  return diffs+(i<a.length||j<b.length?1:0)<=1;
+}
+function searchMatch(text,query){
+  var hay=String(text||"").toLowerCase(), q=String(query||"").trim().toLowerCase();
+  if(!q)return true;
+  var words=hay.split(/[^a-z0-9]+/).filter(Boolean);
+  return q.split(/\s+/).every(function(term){
+    if(hay.indexOf(term)>=0)return true;
+    return term.length>=5&&words.some(function(word){return oneEditApart(word,term);});
+  });
+}
+/* your shared sessions and the crew's, newest first */
+/* The feed is whatever the server last handed back — one source of truth, so
+   a session you share appears for you exactly as it appears for everyone else.
+   It refreshes on every sync, which a share triggers via save(). */
+function crewFeed(){ return SY.feed||[]; }
+function feedItem(id){
+  return crewFeed().filter(function(x){return x.id===id;})[0]||null;}
+
+/* ---------- likes and comments ----------
+   soc() reads and must never be written through -- it hands back a shared
+   empty when nothing is stored. socW() is the one that creates. */
+var NOSOC={likes:[],comments:[]};
+function soc(id){return S.social[id]||NOSOC;}
+function socW(id){return S.social[id]||(S.social[id]={likes:[],comments:[]});}
+function liked(id){return soc(id).likes.indexOf(meId())>=0;}
+
+/* ---------- lineage ----------
+   A workout started from someone else's carries from:{who,src}. The copy
+   says whose it was; the original counts how many people ran it. */
+function repeats(id){
+  return crewFeed().filter(function(x){return x.from&&x.from.src===id;}).length;}
+
+/* one session's totals, split by kind */
+function totals(s){var v=0,mins=0,secs=0,nsets=0,hasCardio=false,hasLift=false,hasHold=false;
+  s.ex.forEach(function(x){
+    nsets+=x.sets.length;
+    if(isCardio(kindOf(x))){hasCardio=true;mins+=minutes(x.sets);}
+    else if(kindOf(x)==="hold"){hasHold=true;secs+=seconds(x.sets);}
+    else{hasLift=true;x.sets.forEach(function(t){v+=t[0]*t[1];});}});
+  return {vol:v,mins:mins,secs:secs,sets:nsets,hasCardio:hasCardio,hasLift:hasLift,hasHold:hasHold};}
+
+/* set → display strings, per kind */
+function setHTML(k,t){
+  if(k==="lift") return t[0]+'<em>reps</em>'+fmt(t[1])+'<em>lb</em>';
+  if(k==="hold") return fmt(t[0])+'<em>sec</em>'+(t[1]?fmt(t[1])+'<em>lb</em>':"");
+  if(k==="machine") return fmt(t[0])+'<em>min</em>'+'<em>level</em>'+fmt(t[1]);
+  return fmt(t[0])+'<em>min</em>'+fmt(t[1])+'<em>mph</em>'+fmt(t[2])+'<em>% incl</em>';
+}
+function setChip(k,t){
+  if(k==="lift") return t[0]+"&times;"+fmt(t[1]);
+  if(k==="hold") return fmt(t[0])+"sec"+(t[1]?" + "+fmt(t[1])+"lb":"");
+  if(k==="machine") return fmt(t[0])+"min L"+fmt(t[1]);
+  return fmt(t[0])+"min "+fmt(t[1])+"mph "+fmt(t[2])+"%";
+}
+function exSummary(k,sets){
+  if(k==="lift") return plural(sets.length,"set")+" &middot; top "+fmt(heaviest(sets)[1])+" lb";
+  if(k==="hold") return holdTime(seconds(sets))+(topLevel(sets)?" &middot; "+fmt(topLevel(sets))+" lb":"");
+  if(k==="machine") return hhmm(minutes(sets))+" &middot; level "+fmt(topLevel(sets));
+  return hhmm(minutes(sets))+" &middot; "+fmt(heaviest(sets)[1])+" mph";
+}
+
+/* ---------- render ---------- */
+var V=document.getElementById("view"), BAR=document.getElementById("bar");
+/* Which screen you are looking at. Two renders that agree on this are the
+   same screen redrawn, not a navigation. */
+function viewKey(){
+  return [view.name,view.name2||view.id||"",S.tab,S.home,
+          API,SY.user?SY.user.id:""].join("|");
+}
+var lastKey=null;
+function scrollBox(){
+  return (typeof document!=="undefined"&&typeof document.querySelector==="function")
+    ? document.querySelector(".scroll") : null;
+}
+/* A render replaces the whole view, which drops the scroll box back to the
+   top. A background sync re-renders about a second after you open the Crew
+   tab, so the feed used to scroll itself back up while you were reading it.
+   Keep the offset when the screen has not changed; a real navigation still
+   starts at the top. */
+function render(){
+  var key=viewKey(), box=scrollBox();
+  var top=(key===lastKey&&box)?box.scrollTop:0;
+  var act=(typeof document!=="undefined")?document.activeElement:null;
+  /* the two search boxes: a redraw underneath somebody who is typing must
+     not take the caret with it */
+  var focus=(act&&(act.id==="exq"||act.id==="findq"))
+    ? {id:act.id,at:act.selectionStart} : null;
+  renderView();
+  lastKey=key;
+  if(top){ box=scrollBox(); if(box) box.scrollTop=top; }
+  if(focus){
+    var el=document.getElementById(focus.id);
+    if(el&&typeof el.focus==="function"){
+      el.focus();
+      try{ el.setSelectionRange(focus.at,focus.at); }catch(e){}
+    }
+  }
+}
+function renderView(){
+  /* Signed out on a server, nothing else renders: no calendar, no crew, no
+     way to log a set into a store that belongs to somebody else. */
+  if(API===null) return renderSplash();
+  /* an invite link opens the join door instead of the sign-in door -- and it
+     opens a one-button version of it for somebody already signed in, who has
+     no account to make but does have a follow to accept */
+  if(API===true&&!SY.user) return JOIN.code?renderJoin():renderGate();
+  if(API===true&&SY.user&&JOIN.code) return renderJoinIn();
+  if(view.name==="home")renderHome();
+  else if(view.name==="session")renderSession();
+  else if(view.name==="data")renderData();
+  else if(view.name==="notifications")renderNotifications();
+  else renderExercise();
+}
+function scroll(html){return '<div class="scroll">'+html+'</div>';}
+
+/* One six-week calendar viewport. Days from the neighbouring months stay in
+   the overlapping weeks, so swiping never produces a broken-looking edge. */
+function calendarMonth(m){
+  var start=firstDow(m), byDay={}, i, td=today(), y=+m.slice(0,4), mo=+m.slice(5,7)-1;
+  S.sessions.forEach(function(s){ (byDay[s.date]=byDay[s.date]||[]).push(s); });
+  var cells="";
+  for(i=0;i<42;i++){
+    var dt=new Date(y,mo,1-start+i,12), date=dt.getFullYear()+"-"+
+      String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+    var ss=byDay[date]||[], outside=ym(date)!==m;
+    var cls="cell"+(outside?" out":"")+(ss.length?" on":"")+
+      (date===td?(S.live?" live":" today"):"");
+    var dots=ss.length
+      ? '<span class="dots">'+ss.slice(0,3).map(function(s){
+          return '<i data-split="'+s.split+'"></i>';}).join("")+'</span>'
+      : '<span class="dots"></span>';
+    var tag=ss.length?ss.map(function(s){return SPLIT_NAME[s.split];}).join(" + "):"";
+    cells+= ss.length
+      ? '<button class="'+cls+'" title="'+dstr(date)+(tag?" — "+tag:"")+
+        '" onclick="openSession(\''+ss[0].id+'\')">'+dt.getDate()+dots+'</button>'
+      : '<div class="'+cls+'">'+dt.getDate()+dots+'</div>';
+  }
+  var ms=inMonth(m), trainedDays={}, mins=0, vol=0;
+  ms.forEach(function(s){var t=totals(s); trainedDays[s.date]=true; mins+=t.mins; vol+=t.vol;});
+  var days=Object.keys(trainedDays).length;
+  return '<section class="calviewport" data-month="'+m+'" '+
+    'ontouchstart="calendarTouchStart(event)" ontouchend="calendarTouchEnd(event)">'+
+    '<div class="calmonthhead"><button onclick="openMonthPicker(\''+m+'\')" '+
+      'aria-label="Jump to another month">'+monthLabel(m)+
+      '<span class="jumpmark">&#9660;</span></button>'+
+      (m===ym(today())?'<span class="current">Current month</span>':'')+'</div>'+
+    '<div class="calwrap">'+
+    '<div class="calgrid">'+["S","M","T","W","T","F","S"].map(function(d){
+      return '<div class="caldow">'+d+'</div>';}).join("")+cells+'</div>'+
+    '<div class="calfoot"><div><b>'+days+'</b>'+(days===1?"day":"days")+' trained</div>'+
+      (vol?'<div><b>'+Math.round(vol).toLocaleString()+'</b>lb lifted</div>':'')+
+      (mins?'<div><b>'+mins+'</b>min cardio</div>':'')+'</div></div></section>';
+}
+
+function sessionCard(s){
+  var t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
+  if(t.hasLift) parts.push(plural(t.sets,"set"),
+    '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
+  if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
+  return '<button class="card" data-split="'+s.split+'" onclick="openSession(\''+s.id+'\')">'+
+    '<div class="rowbetween"><h2>'+dstr(s.date)+'</h2><span class="chip">'+
+      SPLIT_NAME[s.split]+'</span></div>'+
+    '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
+    '<div class="exlist">'+s.ex.map(function(x){
+      return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+exSummary(kindOf(x),x.sets)+
+        '</span></div>';}).join("")+'</div></button>';
+}
+var collapsedLogMonths={};
+function workoutLog(){
+  var groups={}, order=[];
+  sorted().forEach(function(s){
+    var m=ym(s.date);
+    if(!groups[m]){groups[m]=[];order.push(m);}
+    groups[m].push(s);
+  });
+  if(!order.length)return '<div class="empty">No workouts logged yet.</div>';
+  return order.map(function(m){
+    var open=!collapsedLogMonths[m], ss=groups[m];
+    return '<section class="logmonth"><button class="logmonthtoggle" aria-expanded="'+open+
+      '" onclick="toggleLogMonth(\''+m+'\',this)"><span class="label">'+monthLabel(m)+
+      '</span><span class="meta">'+plural(ss.length,"workout")+
+      '<span class="chev">&#9660;</span></span></button>'+
+      '<div class="list"'+(open?'':' hidden')+'>'+ss.map(sessionCard).join("")+'</div></section>';
+  }).join("");
+}
+function toggleLogMonth(m,button){
+  if(collapsedLogMonths[m])delete collapsedLogMonths[m]; else collapsedLogMonths[m]=true;
+  /* This is deliberately an in-place toggle. Re-rendering shortens the page
+     before its scroll offset is restored, which makes mobile browsers jump. */
+  if(button&&button.nextElementSibling){
+    var open=!collapsedLogMonths[m];
+    button.setAttribute("aria-expanded",String(open));
+    button.nextElementSibling.hidden=!open;
+  }else render();
+}
+function calendar(){
+  var m=S.month, first=calendarStartMonth(), last=ym(today());
+  if(m<first||m>last)m=last;
+  return calendarMonth(m)+'<h2 class="loghead">Workout log</h2>'+workoutLog();
+}
+
+/* A shared session, as the crew sees it: the same card the calendar screen
+   uses, with the person's disc where your own card carries the date. It is a
+   div, not a button -- the whole session is already on the card, so there is
+   nothing to open. */
+/* Who is in the crew, drawn above the feed. It answers the question an empty
+   feed cannot: nobody is missing, there is simply nobody else yet. Since the
+   follow graph landed, "your crew" is the people you follow -- you first, then
+   them in the order you followed them. */
+function crewRoster(){
+  var crew=SY.crew||[];
+  if(!crew.length) return "";
+  var discs=crew.map(function(c){
+    var me=!!(SY.user&&c.id===SY.user.id);
+    var p=me?"me":((FEEDP[c.id]||{}).person||"p1");
+    return '<span class="who" data-person="'+p+'">'+
+      '<span class="avatar">'+esc(c.initials||initials(c.name))+'</span>'+
+      '<span class="nm">'+esc(firstName(c.name))+'</span>'+
+      (me?'<span class="you">You</span>':'')+'</span>';
+  }).join("");
+  var c=SY.counts||{following:0,followers:0};
+  return '<div class="roster"><div class="eyebrow">'+
+    (crew.length===1?'Your crew':'Your crew &middot; '+plural(c.following,"following")+
+      ' &middot; '+plural(c.followers,"follower"))+
+    '</div><div class="rosterrow">'+discs+'</div>'+
+    (crew.length===1
+      ? '<p class="rosternote">It is just you so far. Search for somebody above, '+
+        'or send an invite link &mdash; a link makes the two of you follow each '+
+        'other, and it expires after 48 hours.</p>'
+      : '')+'</div>';
+}
+function crewHTML(){
+  var tools=crewTools()+inviteFreshHTML();
+  /* searching takes over the tab: the roster and the feed are about people you
+     already follow, and neither answers "where is Sam" */
+  if(FIND.q.trim()) return tools+'<div id="findlist">'+findHTML()+'</div>';
+  var items=crewFeed(), top=tools+crewRoster();
+  if(!items.length){
+    if(API===false) return '<div class="empty">The crew feed needs the server.<br>'+
+      'This copy runs on its own.</div>';
+    return top+'<div class="empty">Nothing here yet.<br>'+
+      (SY.crew&&SY.crew.length>1
+        ? 'Finish a workout, or wait for somebody you follow to share one.'
+        : 'Follow somebody, or finish a workout and share it.')+'</div>';
+  }
+  return top+'<div class="list">'+items.map(function(s){
+    var p=personOf(s.who), t=totals(s), parts=[ago(s.date), plural(s.ex.length,"exercise")];
+    if(t.hasLift) parts.push(plural(t.sets,"set"),
+      '<span class="num">'+Math.round(t.vol).toLocaleString()+'</span> lb');
+    if(t.hasCardio) parts.push('<span class="num">'+t.mins+'</span> min cardio');
+    return '<div class="card" data-split="'+s.split+'">'+
+      '<div class="rowbetween"><div class="who" data-person="'+p.person+'">'+
+        '<span class="avatar">'+esc(initials(p.name))+'</span>'+
+        '<span class="nm">'+esc(firstName(p.name))+'</span>'+
+        (s.mine?'<span class="you">You</span>':'')+
+      '</div><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
+      lineage(s)+
+      '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div>'+
+      '<div class="exlist">'+s.ex.map(function(x){
+        return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+
+          exSummary(kindOf(x),x.sets)+'</span></div>';
+      }).join("")+'</div>'+socialHTML(s)+'</div>';}).join("")+'</div>';
+}
+/* ---------- finding people, and following them ----------
+   Instant, like Twitter: the button is a write, not a request. Somebody you
+   follow shows up on your crew tab; somebody who follows YOU sees whatever
+   you have marked Shared. */
+function paint(id,html){var e=document.getElementById(id); if(e) e.innerHTML=html;}
+function crewTools(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="crewbar">'+
+    '<input class="search" id="findq" placeholder="Find people" autocomplete="off" '+
+      'spellcheck="false" value="'+esc(FIND.q)+'" oninput="findPeople()">'+
+    '<button class="btn ghost" onclick="newInvite()">Invite</button></div>';
+}
+function findPeople(){
+  var el=document.getElementById("findq");
+  var was=FIND.q.trim()!=="";
+  FIND.q=el?String(el.value||""):"";
+  var now=FIND.q.trim()!=="";
+  /* an emptied box goes back to the roster and the feed */
+  if(!now){ FIND.people=null; findSeq++; return render(); }
+  /* the first keystroke swaps the screen; the rest only redraw the results,
+     or the box would lose focus on every letter -- same rule as the exercise
+     search, for the same reason */
+  FIND.people=null;
+  if(!was) render(); else paint("findlist",findHTML());
+  var n=++findSeq;
+  apiFetch("/api/users?q="+encodeURIComponent(FIND.q.trim())).then(function(j){
+    if(n!==findSeq) return;              /* a later keystroke already won */
+    FIND.people=j.people||[]; paint("findlist",findHTML());
+  },function(){
+    if(n!==findSeq) return;
+    FIND.people=[]; paint("findlist",findHTML());
+  });
+}
+function findHTML(){
+  if(FIND.people===null) return '<p class="rosternote">Searching\u2026</p>';
+  if(!FIND.people.length)
+    return '<p class="rosternote">Nobody matching \u201c'+esc(FIND.q.trim())+'\u201d.</p>';
+  return '<div class="findlist">'+FIND.people.map(function(u){
+    var per=u.mine?"me":((FEEDP[u.id]||{}).person||"p1");
+    return '<div class="findrow"><span class="who" data-person="'+per+'">'+
+      '<span class="avatar">'+esc(u.initials||initials(u.name))+'</span>'+
+      '<span><span class="nm">'+esc(u.name)+'</span>'+
+      '<span class="at">@'+esc(u.username)+'</span></span></span>'+
+      (u.mine?'<span class="you">You</span>'
+        :'<button class="follow'+(u.following?' on':'')+'" aria-pressed="'+!!u.following+
+         '" onclick="toggleFollow(\''+jstr(u.id)+'\')">'+
+         (u.following?'Following':'Follow')+'</button>')+'</div>';
+  }).join("")+'</div>';
+}
+/* Optimistic, like the like button: the tap shows immediately and the sync
+   that follows is what makes it true. A refusal puts it back. */
+function toggleFollow(id){
+  var row=(FIND.people||[]).filter(function(u){return u.id===id;})[0];
+  if(!row) return;
+  var on=!row.following;
+  row.following=on; paint("findlist",findHTML());
+  apiFetch("/api/follow",{method:"POST",body:JSON.stringify({id:id,on:on})})
+    .then(function(){ sync(); },
+          function(){ row.following=!on; paint("findlist",findHTML()); });
+}
+
+/* where a workout came from, or how far it travelled */
+function lineage(s){
+  if(s.from) return '<div class="fromline">&#8635; '+
+    esc(firstName(personOf(s.from.who).name))+'&rsquo;s '+SPLIT_NAME[s.from.split]+' day</div>';
+  var n=repeats(s.id);
+  return n ? '<div class="fromline">&#8635; Done by '+n+
+    (n===1?' other':' others')+'</div>' : '';
+}
+function socialHTML(s){
+  var e=soc(s.id), open=openThread===s.id, mine=liked(s.id);
+  var row='<div class="social">'+
+    '<button class="act'+(mine?' on':'')+'" aria-pressed="'+mine+
+      '" onclick="toggleLike(\''+jstr(s.id)+'\')">&hearts;'+
+      (e.likes.length?' <span class="n">'+e.likes.length+'</span>':'')+'</button>'+
+    '<button class="act'+(open?' on':'')+'" aria-expanded="'+open+
+      '" onclick="toggleThread(\''+jstr(s.id)+'\')">Reply'+
+      (e.comments.length?' <span class="n">'+e.comments.length+'</span>':'')+'</button>'+
+    '<button class="act grow" onclick="doWorkout(\''+jstr(s.id)+'\')">'+
+      (s.mine?'Do it again':'Do this workout')+'</button></div>';
+  if(!open) return row;
+  var thread=e.comments.map(function(c){
+    var p=personOf(c.who);
+    return '<div class="cmt" data-person="'+p.person+'">'+
+      '<span class="avatar">'+esc(initials(p.name))+'</span>'+
+      '<div class="body"><b>'+esc(firstName(p.name))+'</b>'+esc(c.text)+'</div></div>';}).join("");
+  return row+'<div class="thread">'+thread+
+    '<div class="cbox"><input id="c_'+esc(s.id)+'" placeholder="Say something" '+
+      'autocomplete="off" onkeydown="if(event.key===\'Enter\')addComment(\''+jstr(s.id)+'\')">'+
+    '<button onclick="addComment(\''+jstr(s.id)+'\')">Post</button></div></div>';
+}
+
+function renderHome(){
+  var body;
+  if(S.tab==="history"){
+    /* Mine/Crew shares the home slot, so the calendar stays the landing view
+       and the bottom nav keeps its three targets */
+    var seg='<div class="seg">'+
+      '<button aria-pressed="'+(S.home==="mine")+'" onclick="setHome(\'mine\')">Mine</button>'+ 
+      '<button aria-pressed="'+(S.home==="crew")+'" onclick="setHome(\'crew\')">Crew</button></div>';
+    if(S.home==="crew") return renderHomeShell(seg+crewHTML());
+    body = seg + calendar();
+  } else {
+    body='<input class="search exq" id="exq" placeholder="Search exercises" '+
+      'autocomplete="off" value="'+esc(exQuery)+'" oninput="filterExercises()">'+
+      '<div id="exlist">'+exerciseListHTML()+'</div>';
+  }
+  return renderHomeShell(body);
+}
+/* The list is built on its own so typing can redraw it WITHOUT a full render:
+   a render replaces the header too, and the search box would lose focus after
+   every keystroke. */
+var exQuery="";
+function exerciseListHTML(){
+  var q=exQuery.trim().toLowerCase();
+  var idx=Array.from(exerciseIndex().values())
+    .filter(function(e){ return searchMatch(e.name,q); })
+    .sort(function(a,b){return b.last.localeCompare(a.last);});
+  if(!idx.length) return '<div class="empty">'+(q
+    ? 'Nothing logged matches &ldquo;'+esc(exQuery)+'&rdquo;.'
+    : 'No movements yet.<br>Finish a workout and they collect here.')+'</div>';
+  return '<div class="list">'+idx.map(function(e){
+    var meta = isCardio(e.kind)
+      ? hhmm(e.mins)+' logged'
+      : 'best est. 1RM <span class="num">'+Math.round(e.top)+'</span> lb';
+    return '<button class="card" data-split="'+(isCardio(e.kind)?"cardio":e.split)+
+      '" onclick="openExercise(\''+jstr(e.name)+'\')">'+
+      '<div class="rowbetween"><h2>'+esc(e.name)+'</h2><span class="dot"></span></div>'+
+      '<div class="sessionmeta">'+ago(e.last)+' &middot; '+e.n+' session'+(e.n>1?'s':'')+
+      ' &middot; '+meta+'</div></button>';}).join("")+'</div>';
+}
+function filterExercises(){
+  var i=document.getElementById("exq");
+  exQuery=i?String(i.value||""):"";
+  var l=document.getElementById("exlist");
+  if(l) l.innerHTML=exerciseListHTML();
+}
+/* Your own name and disc open the data screen. Signed out — which only
+   happens with no server at all — it falls back to the old text button,
+   because there is nobody to name. */
+function userChip(){
+  if(!SY.user) return '<button class="back" onclick="openData()">Data</button>';
+  var badge=SY.unread?'<span class="notifybadge">'+(SY.unread>99?'99+':SY.unread)+'</span>':'';
+  return '<button class="userbtn" onclick="openNotifications()" aria-label="Notifications'+
+    (SY.unread?', '+SY.unread+' unread':'')+'">'+
+    '<span class="who" data-person="me"><span class="avatar">'+
+      esc(initials(SY.user.name))+'</span>'+badge+'<span class="nm">'+
+      esc(firstName(SY.user.name))+'</span></span></button>';
+}
+function renderHomeShell(body){
+  /* Exercises is a screen you go INTO, so it gets a back button rather than
+     the date, and the way home is the same one every other screen uses. */
+  var ex = S.tab==="exercises";
+  V.innerHTML='<header><div>'+
+    (ex?'<button class="back" onclick="setTab(\'history\')">&lsaquo; Rack Log</button>'
+       :'<div class="eyebrow">'+(S.live?'Workout in progress':dstr(today(),true))+'</div>')+
+    '<h1>'+(ex?"Exercises":"Rack Log")+'</h1></div>'+
+    userChip()+'</header>'+scroll(body);
+  BAR.innerHTML = homeBar(true);
+}
+/* the persistent nav — shown on home and on an exercise page. There is no
+   History button: the calendar is the landing screen, and every screen that
+   leaves it carries its own way back, so a nav button to it was a second
+   answer to a question already answered. A live workout replaces this with
+   Resume. */
+function homeBar(onHome){
+  if(S.live) return '<button class="btn wide" onclick="resume()">Resume '+
+    SPLIT_NAME[S.live.split]+' workout</button>';
+  return '<button class="btn wide" onclick="startWorkout()">+ Start workout</button>'+
+    '<button class="tab" aria-current="'+(onHome&&S.tab==="exercises")+
+      '" onclick="setTab(\'exercises\')">Exercises</button>';
+}
+
+function renderSession(){
+  var live = !!S.live && (!view.id || view.id===S.live.id);
+  var s = live ? S.live : S.sessions.filter(function(x){return x.id===view.id;})[0];
+  if(!s){ view={name:"home"}; return render(); }
+  /* a finished session opens read-only; "Edit" unlocks exactly the controls a
+     live workout has, so there is one set of editing affordances, not two */
+  var edit = !live && !!view.edit, canEdit = live || edit;
+  var t=totals(s);
+  var readout = t.hasCardio && !t.hasLift && !t.hasHold
+    ? {k:"Time",v:t.mins+" min"}
+    : t.hasHold && !t.hasLift && !t.hasCardio
+    ? {k:"Time",v:holdTime(t.secs)}
+    : {k:"Volume",v:Math.round(t.vol).toLocaleString()+
+        (t.hasCardio?" + "+t.mins+"m":"")+(t.hasHold?" + "+holdTime(t.secs):"")};
+
+  var head='<div class="livehead" data-split="'+s.split+'">'+
+    '<div class="rowbetween"><div><div class="eyebrow">'+
+      (live?'Logging now &middot; '+dstr(s.date)
+           :edit?'Editing &middot; '+dstr(s.date,true):dstr(s.date,true))+'</div>'+
+      '<h2 style="margin-top:3px">'+SPLIT_NAME[s.split]+' day</h2>'+
+      (s.from?'<div class="fromline">&#8635; '+
+        esc(firstName(personOf(s.from.who).name))+'&rsquo;s workout</div>':'')+'</div>'+
+      '<div style="text-align:right"><div class="eyebrow">'+readout.k+'</div>'+
+      '<div class="num" style="font-size:17px;font-weight:700">'+readout.v+'</div></div></div>'+
+    (canEdit?'<div class="splitpick" data-split="'+s.split+'">'+
+      '<label class="splitlabel" for="split-select">Workout day</label>'+
+      '<div class="splitselect">'+
+      '<button class="splittrigger" id="split-select" type="button" aria-haspopup="listbox" '+
+        'aria-expanded="false" aria-controls="split-menu" onclick="toggleSplitMenu()" '+
+        'onkeydown="splitTriggerKey(event)">'+
+        '<span class="splitdot" aria-hidden="true"></span>'+
+        '<span class="splitvalue">'+SPLIT_NAME[s.split]+'</span>'+
+        '<svg class="splitchev" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+
+          '<path d="m6 9 6 6 6-6"></path></svg>'+
+      '</button>'+
+      '<div class="splitmenu" id="split-menu" role="listbox" aria-label="Workout day" hidden>'+
+        SPLITS.map(function(p){return '<button class="splitoption" type="button" role="option" '+
+          'data-split="'+p[0]+'" aria-selected="'+(s.split===p[0])+'" '+
+          'onclick="setSplit(\''+p[0]+'\')" onkeydown="splitOptionKey(event)">'+
+          '<span class="splitdot" aria-hidden="true"></span>'+
+          '<span class="splitoptionlabel">'+p[1]+'</span>'+
+          '<span class="splitcheck" aria-hidden="true">&check;</span></button>';}).join("")+
+      '</div></div></div>':'')+
+    '</div>';
+
+  var cards=s.ex.map(function(x,i){
+    var k=kindOf(x), spec=KINDS[k], prev=priorTo(x.name,s), hasHistory=historyOf(x.name).length>0;
+    var lastRow = prev
+      ? '<div class="lastline"><span class="lastlabel">'+dstr(prev.date)+'</span>'+
+        prev.sets.map(function(tt){ return canEdit
+          ? '<button class="ghostset" onclick="prefill('+i+',\''+tt.join(",")+'\')">'+setChip(k,tt)+'</button>'
+          : '<span class="ghostset">'+setChip(k,tt)+'</span>';}).join("")+'</div>'
+      : '<div class="lastline"><span class="lastlabel">First time logging this</span></div>';
+
+    var pb=0, topNow=0;
+    if(k==="lift"){
+      historyOf(x.name).forEach(function(h){ if(h.sid!==s.id) pb=Math.max(pb,best(h.sets).v); });
+      topNow = x.sets.length ? best(x.sets).v : 0;
+    }
+    var sets = x.sets.map(function(tt,j){
+      var isPr = k==="lift" && pb>0 && e1rm(tt[0],tt[1])===topNow && topNow>pb;
+      return '<div class="setrow"><span class="setno">'+(j+1)+'</span>'+
+        '<span class="setval">'+setHTML(k,tt)+(isPr?'<span class="pr">PR</span>':'')+'</span>'+
+        (canEdit?'<button class="kill" title="Remove entry" onclick="delSet('+i+','+j+')">&times;</button>':'<span></span>')+
+        '</div>';}).join("");
+
+    /* finished sessions have no draft (finish() strips it), so editing one
+       falls back to that exercise's own last set */
+    var d = x.draft || (x.sets.length ? x.sets[x.sets.length-1]
+                                      : spec.fields.map(function(){return 0;}));
+    var entry="";
+    if(canEdit){
+      entry='<div class="entry'+(spec.fields.length>2?' stack':'')+'" id="entry'+i+'">'+
+        spec.fields.map(function(f,j){return field(f.label,"f"+i+"_"+j,d[j],f.step);}).join("")+
+        '<button class="btn addset" onclick="addSet('+i+')">Log</button></div>';
+    }
+    /* the card wears the exercise's own classification, so a legs movement
+       slotted into a push day is visible as one */
+    var chartLink=hasHistory
+      ? '<button class="chartlink" onclick="openExercise(\''+jstr(x.name)+'\')" aria-label="View chart for '+esc(x.name)+'">Chart <span aria-hidden="true">&rsaquo;</span></button>'
+      : '';
+    return '<div class="excard" data-split="'+(x.split||(isCardio(k)?"cardio":s.split))+'">'+
+      '<div class="exhead"><div class="exname"><h2>'+esc(x.name)+'</h2>'+chartLink+'</div>'+
+      (canEdit?'<button class="kill" title="Remove exercise" onclick="delEx('+i+')">&times;</button>':'')+
+      '</div>'+lastRow+entry+(x.sets.length?'<div class="sets">'+sets+'</div>':"")+'</div>';
+  }).join("");
+
+  var empty = s.ex.length ? "" :
+    '<div class="empty">Nothing logged yet.<br>Add your first exercise below.</div>';
+
+  V.innerHTML='<header><button class="back" onclick="goHome()">&lsaquo; Rack Log</button>'+
+    (live?'<button class="back" onclick="askCancel()">Cancel workout</button>'
+     :edit?'<span class="eyebrow" style="padding-bottom:2px">Editing</span>'
+     :'<div class="headacts"><button class="back" onclick="toggleShare()">'+
+        (s.shared?'&check; Shared':'Share to followers')+'</button>'+
+        '<button class="shareicon" onclick="openWorkoutShare(\''+s.id+'\')" '+
+        'aria-label="Share workout"><svg viewBox="0 0 24 24" aria-hidden="true">'+
+        '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/>'+
+        '<circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4"/>'+
+        '</svg></button></div>')+
+    '</header>'+scroll(head+cards+empty);
+  BAR.innerHTML = live
+    ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
+      '<button class="btn" onclick="finish()">Finish</button>'
+    : edit
+    ? '<button class="btn wide ghost" onclick="openSheet()">+ Add exercise</button>'+
+      '<button class="btn" onclick="doneEditing()">Done</button>'
+    : '<button class="btn wide ghost" onclick="goHome()">Back to history</button>'+
+      '<button class="btn" onclick="editSession()">Edit</button>';
+}
+function field(label,id,val,step){
+  return '<div class="field"><label for="'+id+'">'+label+'</label><div class="stepper">'+
+    '<button tabindex="-1" aria-label="decrease" onclick="bump(\''+id+'\',-'+step+')">&minus;</button>'+
+    '<input id="'+id+'" type="number" inputmode="decimal" step="'+step+'" value="'+(val||"")+'" '+
+      'onfocus="this.select()" onclick="this.select()">'+
+    '<button tabindex="-1" aria-label="increase" onclick="bump(\''+id+'\','+step+')">+</button></div></div>';
+}
+
+function renderExercise(){
+  var name=view.name2, h=historyOf(name);
+  if(!h.length){ view={name:"home"}; return render(); }
+  var k=h[0].kind, stats, fig;
+
+  if(k==="hold"){
+    var hpts=h.slice().reverse().map(function(x){return {date:x.date,v:seconds(x.sets),
+      tag:topLevel(x.sets)?fmt(topLevel(x.sets))+"lb":"bodyweight"};});
+    var totalSec=0,longestSec=0;
+    h.forEach(function(x){totalSec+=seconds(x.sets);x.sets.forEach(function(t){longestSec=Math.max(longestSec,t[0]||0);});});
+    var lastHold=h[0].sets[h[0].sets.length-1];
+    stats='<div class="statrow">'+
+      '<div class="stat"><div class="eyebrow">Total time</div><div class="v">'+holdTime(totalSec)+'</div></div>'+
+      '<div class="stat"><div class="eyebrow">Longest</div><div class="v">'+holdTime(longestSec)+'</div></div>'+
+      '<div class="stat"><div class="eyebrow">Last weight</div><div class="v">'+fmt(lastHold[1]||0)+' <s>lb</s></div></div></div>';
+    fig='<figure><figcaption><b>Seconds per session</b><span>labelled with added weight</span></figcaption>'+
+      barChart(hpts)+'</figure>';
+  } else if(isCardio(k)){
+    var pts=h.slice().reverse().map(function(x){
+      return {date:x.date, v:minutes(x.sets),
+        tag: k==="machine" ? "L"+fmt(topLevel(x.sets)) : fmt(heaviest(x.sets)[1])+"mph"};});
+    var total=0,longest=0;
+    pts.forEach(function(p){total+=p.v;longest=Math.max(longest,p.v);});
+    var lastSet=h[0].sets[h[0].sets.length-1];
+    stats='<div class="statrow">'+
+      '<div class="stat"><div class="eyebrow">Total time</div><div class="v">'+total+' <s>min</s></div></div>'+
+      '<div class="stat"><div class="eyebrow">Longest</div><div class="v">'+longest+' <s>min</s></div></div>'+
+      '<div class="stat"><div class="eyebrow">'+(k==="machine"?"Last level":"Last speed")+'</div>'+
+      '<div class="v">'+fmt(lastSet[1])+' <s>'+(k==="machine"?"lvl":"mph")+'</s></div></div></div>';
+    fig='<figure><figcaption><b>Minutes per session</b><span>'+
+      (k==="machine"?"labelled with that day&rsquo;s level":"labelled with that day&rsquo;s speed")+
+      '</span></figcaption>'+barChart(pts)+'</figure>';
+  } else {
+    var lpts=h.slice().reverse().map(function(x){var b=best(x.sets);
+      return {date:x.date,v:b.v,b:b};});
+    var pb=lpts.reduce(function(m,p){return p.v>m.v?p:m;},{v:0});
+    var totalSets=0; h.forEach(function(x){totalSets+=x.sets.length;});
+    stats='<div class="statrow">'+
+      '<div class="stat"><div class="eyebrow">Best est. 1RM</div><div class="v">'+Math.round(pb.v)+' <s>lb</s></div></div>'+
+      '<div class="stat"><div class="eyebrow">Last top set</div><div class="v">'+fmt(heaviest(h[0].sets)[1])+' <s>lb</s></div></div>'+
+      '<div class="stat"><div class="eyebrow">Sets logged</div><div class="v">'+totalSets+'</div></div></div>';
+    fig='<figure><figcaption><b>Estimated 1RM</b><span>'+
+      (lpts.length>1?'best set of each session':'one session so far &mdash;<br>log it again to see the trend')+
+      '</span></figcaption>'+lineChart(lpts)+'</figure>';
+  }
+
+  var hist='<div class="hist">'+h.map(function(x){
+    return '<div class="histday" data-split="'+(isCardio(k)?"cardio":x.split)+'">'+
+      '<div class="rowbetween"><span class="d">'+dstr(x.date)+'</span>'+
+      '<span class="chip">'+SPLIT_NAME[x.split]+'</span></div><div class="histsets">'+
+      x.sets.map(function(tt){return '<span>'+setChip(k,tt)+'</span>';}).join("")+
+      '</div></div>';}).join("")+'</div>';
+
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button>'+
+    '<h1 style="margin-top:8px">'+esc(name)+'</h1></div></header>'+
+    scroll(stats+fig+'<div class="eyebrow" style="margin:18px 0 8px">Every session</div>'+hist);
+  BAR.innerHTML=homeBar(false);
+}
+
+function authSection(){
+  if(API===false) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>This copy runs on its own \u2014 nothing syncs, and nothing leaves this device. '+
+    'Export below to move it somewhere.</p></div>';
+  if(API===null) return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Checking for a server\u2026</p></div>';
+  if(SY.user){
+    var c=SY.counts||{following:0,followers:0};
+    return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Signed in as <b>'+esc(SY.user.name)+'</b>'+
+    (SY.user.username?' &middot; <b>@'+esc(SY.user.username)+'</b>':'')+'. '+
+    (syncMsg?esc(syncMsg):'Your workouts follow you to every device you sign in on.')+'</p>'+
+    '<p class="rosternote">'+plural(c.following,"person")+' followed &middot; '+
+      plural(c.followers,"follower")+'. Anybody following you sees the workouts '+
+      'you mark Shared, and nothing else.</p>'+
+    '<div class="datarow">'+
+    '<button class="btn ghost" onclick="askSignOut()">Sign out</button></div></div>';
+  }
+  return '<div class="datasec"><div class="eyebrow">Sync</div>'+
+    '<p>Sign in to keep these workouts on every device. Anything already logged '+
+    'here is uploaded, not replaced.</p>'+signInForm()+'</div>';
+}
+function sharingSection(){
+  var on=S.autoShare!==false;
+  return '<div class="datasec"><div class="eyebrow">Sharing</div>'+ 
+    '<p>New workouts are shared with your followers when you finish them. '+
+    'You can still change any individual workout afterward.</p>'+ 
+    '<button class="prefrow" aria-pressed="'+on+'" onclick="toggleAutoShare()">'+
+    '<span>Automatically share new workouts</span><span class="prefstate">'+
+    (on?'On':'Off')+'</span></button></div>';
+}
+function toggleAutoShare(){ S.autoShare=S.autoShare===false; saveLocal(); render(); }
+function pushSupported(){return API===true&&SY.user&&typeof navigator!=="undefined"&&
+  "serviceWorker" in navigator&&typeof PushManager!=="undefined"&&
+  typeof Notification!=="undefined";}
+function pushSection(){
+  if(API!==true||!SY.user) return "";
+  var supported=pushSupported(), denied=supported&&Notification.permission==="denied";
+  var note=!supported?"Android notifications are not supported in this browser.":
+    denied?"Notifications are blocked in Android settings for Rack Log.":
+    "Get an Android alert when someone likes or comments on your workout. Likes are grouped to avoid noise.";
+  return '<div class="datasec"><div class="eyebrow">Notifications</div><p>'+note+'</p>'+ 
+    (supported&&!denied?'<button class="prefrow" aria-pressed="'+PUSH.enabled+'" '+
+      (PUSH.busy?'disabled ':'')+'onclick="togglePush()"><span>Likes and comments</span><span class="prefstate">'+
+      (PUSH.busy?'Working…':PUSH.enabled?'On':'Off')+'</span></button>':'')+
+    '<div id="pushmsg" class="msg">'+esc(PUSH.msg)+'</div></div>';
+}
+function b64bytes(s){
+  s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4)s+="=";
+  var raw=atob(s), out=new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i); return out;
+}
+function refreshPush(){
+  if(!pushSupported()) return Promise.resolve();
+  return navigator.serviceWorker.register("/sw.js").then(function(){return navigator.serviceWorker.ready;})
+    .then(function(reg){return reg.pushManager.getSubscription();})
+    .then(function(sub){PUSH.enabled=!!sub;if(view.name==="data")render();},function(){});
+}
+function togglePush(){
+  if(PUSH.busy||!pushSupported())return;
+  PUSH.busy=true;PUSH.msg="";render();
+  navigator.serviceWorker.register("/sw.js").then(function(){return navigator.serviceWorker.ready;})
+    .then(function(reg){return reg.pushManager.getSubscription().then(function(sub){return {reg:reg,sub:sub};});})
+    .then(function(x){
+      if(x.sub&&PUSH.enabled) return apiFetch("/api/push",{method:"DELETE",body:JSON.stringify({endpoint:x.sub.endpoint})})
+        .then(function(){return x.sub.unsubscribe();}).then(function(){PUSH.enabled=false;PUSH.msg="Notifications are off on this device.";});
+      return Notification.requestPermission().then(function(permission){
+        if(permission!=="granted")throw new Error("Android did not allow notifications.");
+        return apiFetch("/api/push").then(function(cfg){
+          if(!cfg.publicKey)throw new Error("Notifications are not ready yet.");
+          return x.reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64bytes(cfg.publicKey)});
+        }).then(function(sub){return apiFetch("/api/push",{method:"POST",body:JSON.stringify({subscription:sub.toJSON()})});})
+          .then(function(){PUSH.enabled=true;PUSH.msg="Notifications are on for this device.";});
+      });
+    }).catch(function(e){PUSH.msg=(e&&e.message)||"Couldn’t change notifications.";})
+    .then(function(){PUSH.busy=false;render();});
+}
+/* One form, three homes: the front door, the join door, and the profile
+   screen on a standalone copy that later finds a server. Three of these would
+   drift. It carries both halves -- signing in and signing up -- because they
+   differ by one field and a verb. */
+function signInForm(){
+  var isNew=GATE.mode==="new";
+  return (SY.google
+      ? '<a class="btn link" href="/api/auth/google/start'+
+          (JOIN.code?'?invite='+encodeURIComponent(JOIN.code):'')+
+          '">Continue with Google</a><div class="orline">or</div>'
+      : '')+
+    (isNew?'<input class="fld" id="newdisplay" placeholder="Your name" autocomplete="name">':'')+
+    '<input class="fld" id="loginname" placeholder="Username" autocomplete="username" '+
+      'autocapitalize="none" spellcheck="false">'+
+    '<input class="fld" id="loginpass" type="password" placeholder="'+
+      (isNew?'Password, 8 characters or more':'Password')+'" autocomplete="'+
+      (isNew?'new-password':'current-password')+'">'+
+    '<div class="datarow"><button class="btn" onclick="'+
+      (isNew?'createAccount()':'signIn()')+'">'+
+      (isNew?'Create account':'Sign in')+'</button></div>'+
+    '<p class="gateswap">'+(isNew
+      ? 'Already have an account? <button class="link2" onclick="gateMode(\'in\')">Sign in</button>'
+      : 'New here? <button class="link2" onclick="gateMode(\'new\')">Create an account</button>')+
+    '</p><div class="msg" id="authmsg">'+esc(syncMsg||"")+'</div>';
+}
+/* The two pre-app screens. They share the shell so the door does not jump
+   when /api/me answers. */
+function gateShell(body){
+  V.innerHTML=scroll('<div class="gate"><div class="brandmark">Rack Log<s></s></div>'+body+'</div>');
+  BAR.innerHTML="";
+}
+function renderSplash(){
+  V.innerHTML='<div class="bootscreen" aria-label="Loading Rack Log"></div>';
+  BAR.innerHTML="";
+}
+/* The invite door, for somebody who is NOT signed in. Since signup opened,
+   this is the same form as the front door -- what an invite adds is the
+   sentence at the top and the follow it writes on both sides. */
+function inviteLine(){
+  return (JOIN.from?'<b>'+esc(firstName(JOIN.from))+'</b> wants you to join their crew. '
+                   :'You\u2019ve been invited to a crew. ')+
+    'Create your account or sign in to join.';
+}
+function deadInvite(){
+  return gateShell('<p class="gatesub">'+esc(JOIN.error)+'</p>'+
+    '<div class="datarow"><a class="btn link" href="/">Go to Rack Log</a></div>');
+}
+function renderJoin(){
+  if(JOIN.state!=="ok"&&JOIN.state!=="bad")
+    return gateShell('<p class="gatesub">Checking that invite\u2026</p>');
+  if(JOIN.state==="bad") return deadInvite();
+  gateShell('<p class="gatesub">'+inviteLine()+'</p>'+signInForm());
+}
+/* The invite door for somebody who ALREADY has an account. There is nothing to
+   create, so it is one button -- and it still spends the code, because a link
+   that keeps working after it is used is not what was handed out. */
+function renderJoinIn(){
+  if(JOIN.state!=="ok"&&JOIN.state!=="bad")
+    return gateShell('<p class="gatesub">Checking that invite\u2026</p>');
+  if(JOIN.state==="bad") return deadInvite();
+  gateShell('<p class="gatesub">'+inviteLine().replace(
+      "Create your account or sign in to join.",
+      "You are signed in as <b>"+esc(SY.user.name)+"</b>.")+'</p>'+
+    '<div class="datarow"><button class="btn" onclick="acceptInvite()">Join the crew</button></div>'+
+    '<p class="gateswap"><button class="link2" onclick="dismissJoin()">Not now</button></p>'+
+    '<div class="msg" id="joinmsg"></div>');
+}
+function acceptInvite(){
+  msg("joinmsg","Joining\u2026",false);
+  apiFetch("/api/invite/"+encodeURIComponent(JOIN.code)+"/accept",{method:"POST"})
+    .then(function(){ dismissJoin(); sync(); },
+          function(e){ msg("joinmsg",(e&&e.message)||"Couldn\u2019t join.",true); });
+}
+function dismissJoin(){
+  JOIN.code=""; JOIN.state=""; stripJoin();
+  view={name:"home"}; S.tab="history"; S.home="crew"; render();
+}
+function renderGate(){
+  gateShell('<p class="gatesub">'+(GATE.mode==="new"
+    ? 'Pick a username and a password. Nothing you log is visible to anybody '+
+      'until you share a workout, and a shared workout only reaches the people '+
+      'who follow you.'
+    : 'Sign in to log a workout. Your history follows you to every device you '+
+      'sign in on.')+'</p>'+signInForm());
+}
+/* Changing a password, which is only possible now that there is one to
+   change. Every other session stays signed in on purpose -- the family shares
+   devices, and signing every phone out would be a surprise, not a safeguard. */
+function passwordSection(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="datasec"><div class="eyebrow">Password</div>'+
+    '<input class="fld" id="pwold" type="password" placeholder="Current password" '+
+      'autocomplete="current-password">'+
+    '<input class="fld" id="pwnew" type="password" '+
+      'placeholder="New password, 8 characters or more" autocomplete="new-password">'+
+    '<div class="datarow"><button class="btn ghost" onclick="changePassword()">'+
+      'Change password</button></div>'+
+    '<div class="msg" id="pwmsg"></div></div>';
+}
+function changePassword(){
+  var a=document.getElementById("pwold"), b=document.getElementById("pwnew");
+  var cur=a?String(a.value||""):"", next=b?String(b.value||""):"";
+  if(!cur) return msg("pwmsg","Enter your current password.",true);
+  if(next.length<8) return msg("pwmsg","Passwords need at least 8 characters.",true);
+  msg("pwmsg","Changing\u2026",false);
+  apiFetch("/api/password",{method:"POST",body:JSON.stringify({current:cur,next:next})})
+    .then(function(){ if(a) a.value=""; if(b) b.value="";
+            msg("pwmsg","Changed. Your other devices stay signed in.",false); },
+          function(e){ msg("pwmsg",(e&&e.message)||"Couldn\u2019t change it.",true); });
+}
+
+/* ---------- invites ----------
+   Anybody signed in can invite, and everybody can see every invite. That is
+   deliberate for a household: there is no admin role here, and an invite that
+   only one person could audit would be worse, not better. */
+function untilStr(ms){
+  var d=ms-Date.now();
+  if(d<=0) return "now";
+  var h=Math.floor(d/3600000);
+  return h>=1 ? "in "+plural(h,"hour") : "in "+plural(Math.max(1,Math.round(d/60000)),"minute");
+}
+function loadInvites(){
+  if(API!==true||!SY.user) return;
+  apiFetch("/api/invites").then(function(j){
+    INV.list=j.invites||[];
+    if(view.name==="data") render();
+  },function(){ INV.list=[]; if(view.name==="data") render(); });
+}
+function inviteFreshHTML(){
+  if(!INV.fresh) return "";
+  return '<div class="invitenew"><div class="eyebrow">Send this link</div>'+
+    '<input class="fld" id="invitelink" readonly value="'+esc(INV.fresh.url)+'">'+
+    '<div class="datarow"><button class="btn" onclick="copyInvite()">Copy link</button></div>'+
+    '<p class="rosternote">Expires '+esc(untilStr(INV.fresh.expires))+', and works '+
+      'once. Whoever takes it follows you, and you follow them. This is the only '+
+      'time the link is shown \u2014 if you lose it, cancel it on your profile and '+
+      'make another.</p>'+
+    '<div class="msg" id="invmsg"></div>'+
+    '<div class="datarow"><button class="btn ghost" onclick="dismissInvite()">Done'+
+      '</button></div></div>';
+}
+function inviteRowsHTML(){
+  if(INV.list===null) return '<p class="rosternote">Loading\u2026</p>';
+  if(!INV.list.length) return '<p class="rosternote">No invites yet.</p>';
+  return '<div class="invlist">'+INV.list.map(function(i){
+    var label = i.state==="used"    ? "Joined"+(i.usedBy?" \u2014 "+esc(i.usedBy):"")
+              : i.state==="pending" ? "Waiting \u00b7 expires "+esc(untilStr(i.expires))
+              : i.state==="revoked" ? "Cancelled"
+              :                       "Expired";
+    return '<div class="invrow"><div><b>'+label+'</b><span>'+esc(i.id)+'</span></div>'+
+      (i.state==="pending"
+        ? '<button class="act" onclick="revokeInvite(\''+jstr(i.id)+'\')">Cancel</button>'
+        : '')+'</div>';}).join("")+'</div>';
+}
+function crewSection(){
+  if(API!==true||!SY.user) return "";
+  return '<div class="datasec"><div class="eyebrow">Invite someone</div>'+
+    '<p>An invite link works once and expires after 48 hours. Whoever takes it '+
+    'follows you and you follow them, so you each see what the other marks '+
+    'Shared. Unfollowing undoes it.</p>'+
+    inviteFreshHTML()+
+    '<div class="datarow"><button class="btn ghost" onclick="newInvite()">'+
+      'Create an invite link</button></div>'+
+    (INV.msg?'<div class="msg bad">'+esc(INV.msg)+'</div>':'')+
+    inviteRowsHTML()+'</div>';
+}
+function dismissInvite(){ INV.fresh=null; render(); }
+function newInvite(){
+  INV.msg=""; INV.fresh=null;
+  apiFetch("/api/invites",{method:"POST"}).then(function(j){
+    INV.fresh=j; loadInvites(); render();
+  },function(e){ INV.msg=(e&&e.message)||"Couldn\u2019t make an invite."; render(); });
+}
+function revokeInvite(id){
+  apiFetch("/api/invites/"+encodeURIComponent(id)+"/revoke",{method:"POST"})
+    .then(function(){
+      if(INV.fresh&&INV.fresh.id===id) INV.fresh=null;
+      loadInvites();
+    },function(e){ INV.msg=(e&&e.message)||"Couldn\u2019t cancel that."; render(); });
+}
+function copyInvite(){
+  var t=document.getElementById("invitelink");
+  if(!t) return;
+  var fallback=function(){
+    try{ t.select(); t.setSelectionRange(0,999999);
+      msg("invmsg",document.execCommand("copy")?"Copied.":"Press Ctrl/Cmd-C to copy.",false);
+    }catch(e){ msg("invmsg","Select the link above and copy it.",true); }};
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t.value).then(function(){msg("invmsg","Copied.",false);},fallback);
+  else fallback();
+}
+function renderData(){
+  var n=S.sessions.length, t=0;
+  S.sessions.forEach(function(x){ t+=totals(x).vol; });
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button>'+
+    '<h1>Profile</h1></div></header>'+
+    scroll(
+      '<div class="datasec"><div class="eyebrow">Logged</div><p>'+
+        plural(n,"finished session")+(t?', <span class="num">'+
+        Math.round(t).toLocaleString()+'</span> lb moved in total':'')+'.</p></div>'+
+      sharingSection()+pushSection()+authSection()+passwordSection()+crewSection());
+  BAR.innerHTML=homeBar(false);
+}
+function openData(){view={name:"data",from:view};INV.msg="";render();loadInvites();refreshPush();}
+function noticeTime(ms){return new Date(ms).toLocaleString("en-US",{month:"short",day:"numeric",
+  hour:"numeric",minute:"2-digit"});}
+function renderNotifications(){
+  var rows=SY.notifications||[];
+  var body=rows.length?'<div class="notice-list">'+rows.map(function(n){
+    var what=(SPLIT_NAME[n.workout_split]||"Workout")+' workout &middot; '+dstr(n.workout_date);
+    var action=n.kind==="comment"?' commented: &ldquo;'+esc(n.body)+'&rdquo;':' liked your workout';
+    return '<button class="notice'+(n.unread?' unread':'')+'" onclick="openNotice(\''+jstr(n.item_id)+'\')">'+
+      '<span class="avatar">'+esc(n.actor_initials||initials(n.actor_name))+'</span><span class="notice-copy">'+
+      '<b>'+esc(n.actor_name)+'</b>'+action+'<small>'+what+' &middot; '+noticeTime(n.created)+'</small></span></button>';
+  }).join("")+'</div>':'<div class="empty">No likes or comments yet.</div>';
+  V.innerHTML='<header><div><button class="back" onclick="goBack()">&lsaquo; Back</button><h1>Notifications</h1></div>'+ 
+    '<button class="back" onclick="openData()">Profile</button></header>'+scroll(body);
+  BAR.innerHTML=homeBar(false);
+}
+function loadNotifications(markRead){
+  if(API!==true||!SY.user)return Promise.resolve();
+  return apiFetch("/api/notifications").then(function(j){
+    SY.notifications=j.items||[];SY.unread=Number(j.unread||0);
+    if(markRead&&SY.unread){SY.unread=0;apiFetch("/api/notifications/read",{method:"POST"}).catch(function(){});}
+    render();
+  },function(){if(view.name==="notifications")render();});
+}
+function openNotifications(){view={name:"notifications",from:view};render();loadNotifications(true);}
+function openNotice(id){
+  var found=feedItem(id);S.home="crew";S.tab="history";view={name:"home"};openThread=found?id:null;render();
+}
+function msg(id,text,bad){var e=document.getElementById(id);
+  if(e){e.className="msg"+(bad?" bad":"");e.textContent=text;}}
+
+var CW=340,CH=152,CL=36,CR=18,CT=16,CB=26;
+function xlabel(d){return dstr(d).replace(/^[A-Za-z]+, /,"");}
+function lineChart(pts){
+  var iw=CW-CL-CR, ih=CH-CT-CB;
+  var vs=pts.map(function(p){return p.v;});
+  var lo=Math.min.apply(null,vs), hi=Math.max.apply(null,vs);
+  if(hi-lo<8){lo-=6;hi+=6;} else {var pad=(hi-lo)*.25;lo-=pad;hi+=pad;}
+  function x(i){return pts.length===1?CL+iw/2:CL+iw*i/(pts.length-1);}
+  function y(v){return CT+ih-(v-lo)/(hi-lo)*ih;}
+  var g="",out="",i;
+  for(i=0;i<=3;i++){var v=lo+(hi-lo)*i/3;
+    g+='<line class="grid" x1="'+CL+'" y1="'+y(v).toFixed(1)+'" x2="'+(CW-CR)+'" y2="'+y(v).toFixed(1)+'"/>'+
+       '<text class="lbl" x="'+(CL-7)+'" y="'+(y(v)+3).toFixed(1)+'" text-anchor="end">'+Math.round(v)+'</text>';}
+  var d=pts.map(function(p,j){return (j?"L":"M")+x(j).toFixed(1)+" "+y(p.v).toFixed(1);}).join(" ");
+  if(pts.length>1){
+    out+='<path class="area" d="'+d+' L'+x(pts.length-1).toFixed(1)+' '+(CT+ih)+' L'+x(0).toFixed(1)+' '+(CT+ih)+' Z"/>';
+    out+='<path class="ser" d="'+d+'"/>';}
+  pts.forEach(function(p,j){
+    out+='<circle class="pt" cx="'+x(j).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="4.5"><title>'+
+      dstr(p.date)+" — "+p.b.r+"×"+fmt(p.b.w)+" lb · est. "+Math.round(p.v)+' lb</title></circle>';
+    out+='<text class="lbl" x="'+x(j).toFixed(1)+'" y="'+(CH-8)+'" text-anchor="middle">'+xlabel(p.date)+'</text>';});
+  var lp=pts[pts.length-1], multi=pts.length>1;
+  out+='<text class="endlbl" x="'+(x(pts.length-1)-(multi?3:0)).toFixed(1)+'" y="'+(y(lp.v)-11).toFixed(1)+
+    '" text-anchor="'+(multi?"end":"middle")+'">'+Math.round(lp.v)+'</text>';
+  return '<svg class="chart" viewBox="0 0 '+CW+' '+CH+'" role="img" '+
+    'aria-label="Estimated one-rep max by session, most recent '+Math.round(lp.v)+' pounds">'+g+out+'</svg>';
+}
+function barChart(pts){
+  var iw=CW-CL-CR, ih=CH-CT-CB, base=CT+ih;
+  var hi=Math.max.apply(null,pts.map(function(p){return p.v;}));
+  hi=Math.max(hi*1.25,10);
+  function y(v){return base-v/hi*ih;}
+  var slot=iw/pts.length, bw=Math.min(38,slot-8), g="",out="",i;
+  for(i=0;i<=3;i++){var v=hi*i/3;
+    g+='<line class="grid" x1="'+CL+'" y1="'+y(v).toFixed(1)+'" x2="'+(CW-CR)+'" y2="'+y(v).toFixed(1)+'"/>'+
+       '<text class="lbl" x="'+(CL-7)+'" y="'+(y(v)+3).toFixed(1)+'" text-anchor="end">'+Math.round(v)+'</text>';}
+  pts.forEach(function(p,j){
+    var cx=CL+slot*j+slot/2, top=y(p.v), h=Math.max(base-top,2);
+    out+='<rect class="barmark" x="'+(cx-bw/2).toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+bw.toFixed(1)+
+      '" height="'+h.toFixed(1)+'" rx="4"><title>'+dstr(p.date)+" — "+p.v+" min · "+p.tag+'</title></rect>';
+    out+='<text class="endlbl" x="'+cx.toFixed(1)+'" y="'+(top-6).toFixed(1)+'" text-anchor="middle">'+p.v+'</text>';
+    out+='<text class="lbl" x="'+cx.toFixed(1)+'" y="'+(CH-16)+'" text-anchor="middle">'+xlabel(p.date)+'</text>';
+    out+='<text class="lbl" x="'+cx.toFixed(1)+'" y="'+(CH-5)+'" text-anchor="middle">'+p.tag+'</text>';});
+  return '<svg class="chart" viewBox="0 0 '+CW+' '+CH+'" role="img" '+
+    'aria-label="Minutes per session, most recent '+pts[pts.length-1].v+' minutes">'+g+out+'</svg>';
+}
+
+/* ---------- actions ---------- */
+function setTab(t){S.tab=t;view={name:"home"};save();render();}
+function setHome(v){S.home=v;openThread=null;view={name:"home"};save();render();}
+/* Engagement is optimistic on screen and authoritative on the server. There
+   is no retry queue: if the post fails, the sync that follows pulls the truth
+   back and the tap simply undoes itself, which is honest — a like nobody
+   received should not keep glowing. */
+function postSocial(body){
+  if(API!==true||!SY.user) return;              /* standalone stays local */
+  apiFetch("/api/social",{method:"POST",body:JSON.stringify(body)})
+    .then(syncSoon,function(){
+      syncMsg="That didn\u2019t reach the crew."; syncSoon(); });
+}
+function toggleLike(id){
+  var l=socW(id).likes, i=l.indexOf(meId());
+  if(i>=0) l.splice(i,1); else l.push(meId());
+  var on=i<0;
+  saveLocal(); render();
+  postSocial({item:id,kind:"like",on:on});
+}
+function toggleThread(id){openThread=(openThread===id?null:id);render();}
+function addComment(id){
+  var el=document.getElementById("c_"+id); if(!el) return;
+  var t=el.value.trim(); if(!t) return;
+  socW(id).comments.push({who:meId(),text:t});
+  el.value=""; saveLocal(); render();
+  postSocial({item:id,kind:"comment",text:t});
+}
+/* Start someone else's workout as a template: their exercise list and split,
+   your own numbers. The copy remembers where it came from, which is what
+   makes "done by N others" countable on the original. */
+function doWorkout(id){
+  var item=feedItem(id); if(!item) return;
+  if(!S.live) return startFrom(item);
+  var n=0; S.live.ex.forEach(function(x){n+=x.sets.length;});
+  confirmDialog("Swap workouts?",
+    (n?"Your live "+SPLIT_NAME[S.live.split]+" workout has <b>"+n+"</b> set"+
+        (n===1?"":"s")+" logged. Starting this one discards it."
+       :"Your live "+SPLIT_NAME[S.live.split]+" workout has nothing logged yet."),
+    "Start theirs","Keep mine",function(){startFrom(item);});
+}
+function startFrom(item){
+  S.live={id:"live",date:today(),split:item.split,ex:[],
+          from:{who:item.who,src:item.id,split:item.split}};
+  item.ex.forEach(function(x){
+    var kind=kindOf(x), prev=priorTo(x.name,S.live);
+    /* their session sets the movements; your own history sets the numbers,
+       falling back to theirs only where you have never done it */
+    S.live.ex.push({name:x.name,kind:kind,
+      split:x.split||(isCardio(kind)?"cardio":item.split),sets:[],
+      draft:prev?prev.sets[0].slice():(x.sets[0]?x.sets[0].slice():defaultDraft(kind))});
+  });
+  openThread=null; view={name:"session"}; save(); render();
+}
+/* Sharing is now the DEFAULT — finish() sets it — because a crew feed nobody
+   posts to is an empty screen, and the family asked for the feed. This is the
+   opt-out: it clears the flag, the next sync clears it on the server, and the
+   workout drops off everyone else's Crew tab.
+   Who "everyone else" is changed on 2026-08-29: it is the people who follow
+   you, not every account on the server, and anybody can follow you without
+   being asked. Shared means shared. */
+function toggleShare(){
+  var s=S.sessions.filter(function(x){return x.id===view.id;})[0];
+  if(!s) return;
+  if(s.shared) delete s.shared; else s.shared=true;
+  save(); render();
+}
+function workoutShareText(s){
+  var t=totals(s), detail=plural(s.ex.length,"exercise")+" \u00b7 "+plural(t.sets,"set");
+  if(t.hasLift)detail+=" \u00b7 "+Math.round(t.vol).toLocaleString()+" lb";
+  if(t.hasCardio)detail+=" \u00b7 "+t.mins+" min cardio";
+  if(t.hasHold)detail+=" \u00b7 "+holdTime(t.secs);
+  return "Here\u2019s the "+SPLIT_NAME[s.split]+" workout I did today. Think you can beat it?"+
+    "\n\n"+SPLIT_NAME[s.split]+" workout\n"+detail;
+}
+function workoutShareCardHTML(s){
+  var t=totals(s), parts=[ago(s.date),plural(s.ex.length,"exercise")];
+  if(t.hasLift)parts.push(plural(t.sets,"set"),Math.round(t.vol).toLocaleString()+" lb");
+  if(t.hasCardio)parts.push(t.mins+" min cardio");
+  return '<div class="sharecard" data-split="'+s.split+'"><div class="rowbetween"><h2>'+
+    dstr(s.date)+'</h2><span class="chip">'+SPLIT_NAME[s.split]+'</span></div>'+
+    '<div class="sessionmeta">'+parts.join(" &middot; ")+'</div><div class="exlist">'+
+    s.ex.map(function(x){return '<div class="exline"><b>'+esc(x.name)+'</b><span>'+
+      exSummary(kindOf(x),x.sets)+'</span></div>';}).join("")+'</div></div>';
+}
+function openWorkoutShare(id){
+  var s=S.sessions.filter(function(x){return x.id===id;})[0];
+  if(!s)return;
+  dlgOpen=true; dlgAction=null;
+  DLG.innerHTML='<h2>Share workout</h2><div class="sharepreview"><p>'+esc(
+    "Here\u2019s the "+SPLIT_NAME[s.split]+" workout I did today. Think you can beat it?")+
+    '</p>'+workoutShareCardHTML(s)+'</div>'+
+    '<p>The signup link works once, expires after 48 hours, and connects them to your crew.</p>'+
+    '<div class="dlgbtns"><button class="btn ghost" onclick="closeDialog()">Cancel</button>'+
+    '<button class="btn" id="shareSend" onclick="sendWorkoutShare(\''+id+'\')">Share</button></div>';
+  document.body.classList.add("dialog-open");
+}
+function shareFallback(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    return navigator.clipboard.writeText(text).then(function(){return true;});
+  return Promise.reject(new Error("Sharing is not available."));
+}
+function workoutShareFile(s){
+  if(!document.createElement||typeof File==="undefined")return Promise.resolve(null);
+  try{
+    var c=document.createElement("canvas"), ctx=c.getContext&&c.getContext("2d");
+    if(!ctx||!c.toBlob)return Promise.resolve(null);
+    var shown=s.ex.slice(0,8), h=330+shown.length*72+(s.ex.length>shown.length?50:0),
+      styles=typeof getComputedStyle==="function"?getComputedStyle(document.documentElement):null;
+    function colour(name,fallback){var v=styles&&styles.getPropertyValue(name).trim();return v||fallback;}
+    function rounded(x,y,w,hh,r,fill,stroke){
+      ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+      ctx.lineTo(x+w,y+hh-r);ctx.quadraticCurveTo(x+w,y+hh,x+w-r,y+hh);ctx.lineTo(x+r,y+hh);
+      ctx.quadraticCurveTo(x,y+hh,x,y+hh-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+      if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}
+    }
+    c.width=1080;c.height=h;
+    var bg=colour("--bg","#f2f3f5"),surface=colour("--surface","#ffffff"),
+      ink=colour("--ink","#16181d"),muted=colour("--ink-3","#878e9c"),
+      line=colour("--line","#dcdfe5"),chip=colour("--"+s.split,colour("--other","#5b6472"));
+    ctx.fillStyle=bg;ctx.fillRect(0,0,c.width,c.height);
+    rounded(42,42,996,h-84,28,surface,line);
+    ctx.fillStyle=ink;ctx.font="700 48px sans-serif";ctx.fillText(dstr(s.date),82,116);
+    ctx.font="700 27px sans-serif";var chipText=SPLIT_NAME[s.split].toUpperCase(), cw=ctx.measureText(chipText).width+48;
+    rounded(958-cw,76,cw,54,8,chip,null);ctx.fillStyle="#ffffff";ctx.textAlign="center";
+    ctx.fillText(chipText,958-cw/2,113);ctx.textAlign="left";
+    var t=totals(s), meta=ago(s.date)+"  \u00b7  "+plural(s.ex.length,"exercise")+
+      "  \u00b7  "+plural(t.sets,"set");
+    if(t.hasLift)meta+="  \u00b7  "+Math.round(t.vol).toLocaleString()+" lb";
+    if(t.hasCardio)meta+="  \u00b7  "+t.mins+" min cardio";
+    ctx.fillStyle=muted;ctx.font="500 27px sans-serif";ctx.fillText(meta,82,166);
+    ctx.strokeStyle=line;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(82,202);ctx.lineTo(998,202);ctx.stroke();
+    shown.forEach(function(x,i){
+      var y=260+i*72;
+      ctx.fillStyle=ink;ctx.font="600 29px sans-serif";ctx.fillText(x.name,82,y);
+      ctx.fillStyle=muted;ctx.font="500 24px sans-serif";
+      ctx.textAlign="right";ctx.fillText(exSummary(kindOf(x),x.sets).replace(/&middot;/g,"\u00b7"),998,y);
+      ctx.textAlign="left";
+    });
+    if(s.ex.length>shown.length){ctx.fillStyle=muted;ctx.font="500 24px sans-serif";
+      ctx.fillText("+ "+(s.ex.length-shown.length)+" more",82,264+shown.length*72);}
+    return new Promise(function(resolve){c.toBlob(function(blob){
+      resolve(blob?new File([blob],"rack-log-"+s.date+".png",{type:"image/png"}):null);
+    },"image/png");});
+  }catch(e){return Promise.resolve(null);}
+}
+function sendWorkoutShare(id){
+  var s=S.sessions.filter(function(x){return x.id===id;})[0], b=document.getElementById("shareSend");
+  if(!s||!b)return;
+  b.disabled=true; b.textContent="Preparing\u2026";
+  apiFetch("/api/invites",{method:"POST"}).then(function(invite){
+    var text=workoutShareText(s), payload=text+"\n\nJoin me on Rack Log:\n"+invite.url;
+    return workoutShareFile(s).then(function(file){
+      var data={title:SPLIT_NAME[s.split]+" workout",text:text,url:invite.url};
+      if(file&&navigator.canShare&&navigator.canShare({files:[file]}))data.files=[file];
+      return navigator.share?navigator.share(data):shareFallback(payload);
+    }).then(function(){closeDialog();},function(e){
+      if(e&&e.name==="AbortError"){
+        apiFetch("/api/invites/"+encodeURIComponent(invite.id)+"/revoke",{method:"POST"});
+        closeDialog(); return;
+      }
+      return shareFallback(payload).then(function(){
+        b.disabled=false; b.textContent="Copied";
+      });
+    });
+  },function(e){
+    b.disabled=false; b.textContent="Try again";
+    var p=DLG.querySelector?DLG.querySelector("p"):null;
+    if(p)p.textContent=(e&&e.message)||"Couldn\u2019t create a signup link.";
+  });
+}
+function setMonth(n){jumpToMonth(shiftMonth(S.month,n));} /* legacy exported-data compatibility */
+var calendarTouchX=null, calendarTouchY=null;
+function calendarTouchStart(e){
+  var t=e.touches&&e.touches[0];
+  if(t){calendarTouchX=t.clientX; calendarTouchY=t.clientY;}
+}
+function calendarTouchEnd(e){
+  if(calendarTouchX===null)return;
+  var t=e.changedTouches&&e.changedTouches[0], dx=t?t.clientX-calendarTouchX:0,
+    dy=t?t.clientY-calendarTouchY:0;
+  calendarTouchX=calendarTouchY=null;
+  if(Math.abs(dx)<45||Math.abs(dx)<=Math.abs(dy))return;
+  setMonth(dx<0?1:-1);
+}
+var pickerYear=+(S.month||ym(today())).slice(0,4);
+function openMonthPicker(m){
+  S.month=m||ym(today()); pickerYear=+S.month.slice(0,4); renderMonthPicker();
+  dlgOpen=true; document.body.classList.add("dialog-open");
+}
+function renderMonthPicker(){
+  var first=calendarStartMonth(), last=ym(today()), y=pickerYear, buttons="", i;
+  for(i=1;i<=12;i++){
+    var m=y+"-"+String(i).padStart(2,"0"), enabled=m>=first&&m<=last;
+    buttons+='<button onclick="jumpToMonth(\''+m+'\')"'+(enabled?'':' disabled')+
+      ' aria-current="'+(m===S.month)+'">'+monthLabel(m).split(" ")[0]+'</button>';
+  }
+  DLG.innerHTML='<div class="monthpickerhead"><button onclick="monthPickerYear(-1)" '+
+    'aria-label="Previous year">&lsaquo;</button><h2>'+y+'</h2><button onclick="monthPickerYear(1)" '+
+    (y>=+last.slice(0,4)?'disabled ':'')+'aria-label="Next year">&rsaquo;</button></div>'+
+    '<div class="monthpickgrid">'+buttons+'</div>';
+}
+function monthPickerYear(n){pickerYear+=n; renderMonthPicker();}
+function jumpToMonth(m){
+  var first=calendarStartMonth(), last=ym(today());
+  if(m<first||m>last)return;
+  S.month=m; closeDialog(); save(); render();
+}
+/* home always means the calendar, never whichever tab was last open */
+function goHome(){S.tab="history";view={name:"home"};save();render();}
+function resume(){view={name:"session"};render();}
+function startWorkout(){S.live={id:"live",date:today(),split:"push",ex:[]};view={name:"session"};save();render();}
+function closeSplitMenu(){
+  var trigger=document.getElementById("split-select"), menu=document.getElementById("split-menu");
+  if(!trigger||!menu)return;
+  menu.hidden=true;
+  if(trigger.setAttribute)trigger.setAttribute("aria-expanded","false");
+}
+function toggleSplitMenu(){
+  var trigger=document.getElementById("split-select"), menu=document.getElementById("split-menu");
+  if(!trigger||!menu)return;
+  var open=trigger.getAttribute
+    ? trigger.getAttribute("aria-expanded")==="true" : !menu.hidden;
+  menu.hidden=open;
+  if(trigger.setAttribute)trigger.setAttribute("aria-expanded",String(!open));
+  if(open&&trigger.focus)trigger.focus();
+}
+function splitTriggerKey(e){
+  if(e.key==="Enter"||e.key===" "||e.key==="ArrowDown"){
+    e.preventDefault(); toggleSplitMenu();
+  }else if(e.key==="Escape"){
+    e.preventDefault(); closeSplitMenu();
+  }
+}
+function splitOptionKey(e){
+  var options=Array.prototype.slice.call(document.querySelectorAll(".splitoption")),
+    i=options.indexOf(e.currentTarget);
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault(); options[(i+(e.key==="ArrowDown"?1:-1)+options.length)%options.length].focus();
+  }else if(e.key==="Home"||e.key==="End"){
+    e.preventDefault(); options[e.key==="Home"?0:options.length-1].focus();
+  }else if(e.key==="Escape"){
+    e.preventDefault(); closeSplitMenu();
+    var trigger=document.getElementById("split-select"); if(trigger)trigger.focus();
+  }else if(e.key==="Enter"||e.key===" "){
+    e.preventDefault(); e.currentTarget.click();
+  }
+}
+function setSplit(k){var t=editable(); if(!t)return; closeSplitMenu(); t.split=k;save();render();}
+function openSession(id){view={name:"session",id:id};render();}
+/* The one session logging actions write to: the live workout, or a finished
+   one opened for editing. Everything below goes through it, so live and edit
+   share a single code path. */
+function editable(){
+  if(view.name!=="session") return null;
+  if(S.live && (!view.id || view.id===S.live.id)) return S.live;
+  if(!view.edit) return null;
+  return S.sessions.filter(function(x){return x.id===view.id;})[0]||null;
+}
+function editSession(){ if(view.name==="session"&&view.id){view.edit=true;render();} }
+/* Leaving edit mode mirrors finish(): drop empty exercises and the drafts.
+   Emptying a session out deletes it -- that is how you throw a day away. */
+function doneEditing(){
+  var s=editable(); if(!s) return;
+  s.ex=s.ex.filter(function(x){return x.sets.length;});
+  s.ex.forEach(function(x){delete x.draft;});
+  if(s.ex.length){ view={name:"session",id:s.id}; }
+  else { S.sessions=S.sessions.filter(function(x){return x.id!==s.id;});
+         S.tab="history"; view={name:"home"}; }
+  save(); render();
+}
+function openExercise(n){view={name:"exercise",name2:n,from:view};render();}
+function goBack(){view=(view.from&&view.from.name!=="exercise")?view.from:{name:"home"};render();}
+function bump(id,d){var el=document.getElementById(id);
+  el.value=fmt(Math.max(0,(parseFloat(el.value)||0)+d));}
+function addSet(i){
+  var t=editable(); if(!t)return;
+  var x=t.ex[i], spec=KINDS[kindOf(x)], vals=[], ok=true;
+  spec.fields.forEach(function(f,j){
+    var v=parseFloat(document.getElementById("f"+i+"_"+j).value);
+    if(isNaN(v))v=0;
+    vals.push(v);});
+  if(vals[0]<=0) return;            /* reps, or minutes, must be > 0 */
+  x.sets.push(vals); x.draft=vals.slice(); save(); render(); revealEntry(i);
+}
+function revealEntry(i){
+  setTimeout(function(){var e=document.getElementById("entry"+i);
+    if(e&&e.scrollIntoView) e.scrollIntoView({block:"nearest",behavior:"smooth"});},40);
+}
+function delSet(i,j){var t=editable(); if(!t)return; t.ex[i].sets.splice(j,1);save();render();}
+function delEx(i){var t=editable(); if(!t)return; t.ex.splice(i,1);save();render();}
+function prefill(i,csv){
+  csv.split(",").forEach(function(v,j){
+    var el=document.getElementById("f"+i+"_"+j);
+    if(el)el.value=fmt(parseFloat(v));});
+  var lastEl=document.getElementById("f"+i+"_0"); if(lastEl)lastEl.focus();
+}
+/* Cancelling throws away everything logged so far, so it asks first. */
+function askCancel(){
+  var l=S.live; if(!l) return;
+  var sets=0; l.ex.forEach(function(x){sets+=x.sets.length;});
+  confirmDialog("Cancel workout?",
+    sets ? "You&rsquo;ll lose <b>"+sets+"</b> set"+(sets===1?"":"s")+" across <b>"+
+           l.ex.length+"</b> exercise"+(l.ex.length===1?"":"s")+
+           ". This can&rsquo;t be undone."
+         : "Nothing is logged yet, so nothing will be lost.",
+    "Discard workout","Keep logging",cancelWorkout);
+}
+function cancelWorkout(){S.live=null;S.tab="history";view={name:"home"};save();render();}
+
+function finish(){
+  var l=S.live;
+  l.ex=l.ex.filter(function(x){return x.sets.length;});
+  l.ex.forEach(function(x){delete x.draft;});
+  /* shared by default unless this account has disabled automatic sharing;
+     the finished session still has a one-tap per-workout override */
+  if(l.ex.length){ l.id="u"+Date.now(); if(S.autoShare!==false) l.shared=true;
+    S.sessions.push(l); S.month=ym(l.date); }
+  S.live=null; S.tab="history"; view={name:"home"}; save(); render();
+}
+
+/* ---------- confirm dialog ----------
+   Deliberately not window.confirm: a native modal freezes the page (and, in
+   the published artifact, the whole iframe) until it is dismissed. */
+var DLG=document.getElementById("dialog"), dlgAction=null, dlgOpen=false;
+function confirmDialog(title,body,yes,no,fn){
+  dlgAction=fn; dlgOpen=true;
+  DLG.innerHTML='<h2>'+title+'</h2><p>'+body+'</p><div class="dlgbtns">'+
+    '<button class="btn ghost" onclick="closeDialog()">'+no+'</button>'+
+    '<button class="btn" id="dlgyes" onclick="dialogYes()">'+yes+'</button></div>';
+  document.body.classList.add("dialog-open");
+  setTimeout(function(){var b=document.getElementById("dlgyes"); if(b)b.focus();},180);
+}
+function closeDialog(){dlgAction=null;dlgOpen=false;document.body.classList.remove("dialog-open");}
+function dialogYes(){var f=dlgAction; closeDialog(); if(f)f();}
+document.getElementById("dscrim").onclick=closeDialog;
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape"&&dlgOpen)closeDialog();
+  if(e.key==="Escape")closeSplitMenu();});
+document.addEventListener("click",function(e){
+  if(!e.target.closest||!e.target.closest(".splitpick"))closeSplitMenu();});
+
+/* ---------- exercise picker ---------- */
+var Q=document.getElementById("q");
+document.getElementById("scrim").onclick=closeSheet;
+Q.addEventListener("input",fillPick);
+Q.addEventListener("keydown",function(e){
+  if(e.key==="Enter"){var f=document.querySelector("#picklist .pickitem"); if(f)f.click();}
+  if(e.key==="Escape")closeSheet();
+});
+function openSheet(){document.body.classList.add("sheet-open");Q.value="";fillPick();
+  fitSheet(); setTimeout(function(){Q.focus();fitSheet();},220);}
+function closeSheet(){document.body.classList.remove("sheet-open");
+  if(Q.blur)Q.blur(); if(document.documentElement&&document.documentElement.style)
+    document.documentElement.style.setProperty("--keyboard-inset","0px");}
+function fitSheet(){
+  if(typeof visualViewport==="undefined"||!document.documentElement||!document.documentElement.style) return;
+  var base=(typeof innerHeight==="number"?innerHeight:visualViewport.height);
+  var covered=Math.max(0,base-visualViewport.height-visualViewport.offsetTop);
+  document.documentElement.style.setProperty("--keyboard-inset",covered+"px");
+  document.documentElement.style.setProperty("--sheet-vh",visualViewport.height+"px");
+}
+if(typeof visualViewport!=="undefined"&&visualViewport.addEventListener){
+  visualViewport.addEventListener("resize",fitSheet);
+  visualViewport.addEventListener("scroll",fitSheet);
+}
+function fitsDay(sp,day,kind){
+  if(day==="upper") return sp==="push"||sp==="pull";
+  if(day==="lower") return sp==="legs";
+  if(day==="full") return sp==="push"||sp==="pull"||sp==="legs";
+  if(day==="cardio") return isCardio(kind);
+  return sp===day;
+}
+function fillPick(){
+  var q=Q.value.trim().toLowerCase();
+  var idx=exerciseIndex(), t=editable(), split=t?t.split:"push";
+  var logged=Array.from(idx.values()).filter(function(e){
+    return searchMatch(e.name,q);
+  }).map(function(e){
+    return {name:e.name,split:e.split,kind:e.kind,last:e.last,logged:e};
+  });
+  var known={}; idx.forEach(function(v,k){known[k.toLowerCase()]=1;});
+
+  /* Unlogged library movements use the same result shape as logged ones, so
+     the active workout day can be ranked as one result set instead of as a
+     logged block followed by separate library categories. */
+  var libraryGroups=["push","pull","legs","other"].map(function(sp){
+    return {split:sp,items:(EXTRA[sp]||[]).filter(function(n){
+      return !known[n.toLowerCase()] && searchMatch(n,q);
+    }).map(function(n){
+      return {name:n,split:sp,kind:LIB_KIND[n]||"lift",last:"",logged:null};
+    })};
+  });
+  var cardio={split:"cardio",items:CARDIO_LIB.filter(function(c){
+    return !known[c.name.toLowerCase()] && searchMatch(c.name,q);
+  }).map(function(c){
+    return {name:c.name,split:"cardio",kind:c.kind,last:"",logged:null};
+  })};
+  var library=libraryGroups.reduce(function(a,g){return a.concat(g.items);},[])
+    .concat(cardio.items);
+  var all=logged.concat(library);
+  var dayItems=all.filter(function(e){return fitsDay(e.split,split,e.kind);});
+  var otherItems=all.filter(function(e){return !fitsDay(e.split,split,e.kind);});
+  /* Recent logged movements lead the active-day section; never-used library
+     movements follow them in their stable library order. */
+  function recentFirst(a,b){
+    return (b.last?1:0)-(a.last?1:0) ||
+      (b.last&&a.last?b.last.localeCompare(a.last):0);
+  }
+  dayItems.sort(recentFirst);
+  var exact = !!known[q] || library.some(function(e){return e.name.toLowerCase()===q;});
+
+  var h="", addHTML="";
+  if(q && !exact){
+    var n=Q.value.trim();
+    var choices=["push","pull","legs","other"]
+      .sort(function(a,b){return (b===split?1:0)-(a===split?1:0);})
+      .map(function(sp){return newItem(n,"lift",sp,SPLIT_NAME[sp],"reps &times; weight");});
+    choices.push(newItem(n,"hold","other","Timed hold","seconds + optional weight"));
+      choices.push(newItem(n,"machine","cardio","Cardio","time + level"));
+      addHTML='<div class="grouphead eyebrow">Add &ldquo;'+esc(n)+'&rdquo; as</div>'+choices.join("");
+    }
+    function resultHTML(e){
+      if(!e.logged)
+        return item(e,isCardio(e.kind)
+          ? (e.kind==="tread" ? "time, speed, incline" : "time + level") : "");
+      var meta = isCardio(e.kind)
+        ? ago(e.last)+" · "+minutes(historyOf(e.name)[0].sets)+" min"
+        : e.kind==="hold"
+        ? ago(e.last)+" · "+holdTime(seconds(historyOf(e.name)[0].sets))
+        : ago(e.last)+" · top "+fmt(heaviest(historyOf(e.name)[0].sets)[1])+" lb";
+      return item(e,meta);
+    }
+    if(dayItems.length)
+      h+='<div class="grouphead eyebrow">For your '+SPLIT_NAME[split]+' day</div>'+dayItems.map(resultHTML).join("");
+    h+=addHTML;
+    /* Keep the remaining classifications grouped, but leave any logged
+       movement beside its category's library choices. */
+    var remainingGroups=libraryGroups.map(function(g){
+      var items=otherItems.filter(function(e){return e.split===g.split;});
+      return {split:g.split,items:items};
+    }).filter(function(g){return g.items.length;});
+    if(otherItems.some(function(e){return e.split==="cardio";}))
+      remainingGroups.push({split:"cardio",items:otherItems.filter(function(e){return e.split==="cardio";})});
+    h+=remainingGroups.map(function(g){
+      var label=g.split==="cardio" ? "Cardio machines" : GROUP_LABEL[g.split];
+      return '<div class="grouphead eyebrow">'+label+'</div>'+
+        g.items.map(resultHTML).join("");
+    }).join("");
+    if(!h) h='<div class="empty">Type a name to add it.</div>';
+    document.getElementById("picklist").innerHTML=h;
+  }
+function item(e,meta){
+  return '<button class="pickitem" data-split="'+e.split+
+    '" onclick="pick(\''+jstr(e.name)+'\',\''+(e.kind||"lift")+'\',\''+e.split+'\')">'+
+    '<span class="dot"></span><span>'+esc(e.name)+'</span>'+(meta?'<small>'+meta+'</small>':"")+'</button>';
+}
+function newItem(n,kind,split,label,meta){
+  return '<button class="pickitem" data-split="'+split+
+    '" onclick="pick(\''+jstr(n)+'\',\''+kind+'\',\''+split+'\')">'+
+    '<span class="dot"></span><span>'+label+'</span><small>'+meta+'</small></button>';
+}
+function pick(n,k,sp){
+  var s=editable(); if(!s) return;
+  var has=s.ex.some(function(x){return x.name===n;});
+  if(!has){
+    var prev=priorTo(n,s);
+    var kind=prev?prev.kind:(k||LIB_KIND[n]||"lift");
+    var split=(prev&&prev.exSplit)||sp||(isCardio(kind)?"cardio":s.split);
+    var d=prev?prev.sets[0].slice():defaultDraft(kind);
+    s.ex.push({name:n,kind:kind,split:split,sets:[],draft:d});
+  }
+  closeSheet(); save(); render();
+  var at=s.ex.map(function(x){return x.name;}).indexOf(n); if(at>=0) revealEntry(at);
+  setTimeout(function(){var sc=document.querySelector(".scroll");
+    if(sc)sc.scrollTo({top:1e6,behavior:"smooth"});},60);
+}
+function defaultDraft(kind){
+  if(kind==="lift") return [8,0];
+  if(kind==="hold") return [30,0];
+  if(kind==="machine") return [20,5];
+  return [20,3.5,2];
+}
+
+render();
+syncBoot();
+/* Android can restore the signed-out page from its back/forward cache after a
+   login round trip. A persisted page is a snapshot, not current auth truth:
+   signed-in snapshots return to Home, and signed-out snapshots ask /api/me
+   again instead of exposing the stale door. */
+function returnFromHistory(e){
+  if(!e||!e.persisted) return;
+  if(SY.user){ openThread=null; goHome(); sync(); return; }
+  API=null; render(); syncBoot();
+}
+/* Two moments are worth a sync nobody asked for: coming back to the app, and
+   coming back onto the network. Everything else already syncs through save().
+   There is no Sync now button -- a button that does what the app does on a
+   1.2s timer is a button that exists to apologise for the app not doing it,
+   and on a phone the person who needs it most is the one least likely to go
+   looking for it.
+   Neither event is a guarantee: a captive portal fires `online` while nothing
+   can reach the worker. That is why the failure message says the workouts are
+   safe rather than promising a moment, and why the next save() retries
+   anyway. */
+if(typeof document.addEventListener==="function")
+  document.addEventListener("visibilitychange",function(){
+    if(!document.hidden) sync(); });
+if(typeof addEventListener==="function")
+  addEventListener("online",function(){ syncMsg=""; sync(); });
+if(typeof addEventListener==="function")
+  addEventListener("pageshow",returnFromHistory);
+</script>

@@ -1,0 +1,29 @@
+name = "racklog"
+main = "worker/index.js"
+compatibility_date = "2026-08-29"
+account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+
+# rack-log.html and the icons ship inside the worker bundle, so there is no
+# assets directory to keep in sync and still no build step. HTML is a Text
+# module by default; PNG needs saying, and fallthrough keeps the defaults.
+rules = [
+  { type = "Data", globs = ["**/*.png"], fallthrough = true }
+]
+
+# Google sign-in. The client id is public and belongs in the repo; the secret
+# does NOT — set it once with:
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+# and put it in .dev.vars (gitignored) for `wrangler dev`. Leave the id empty
+# and the worker never offers Google at all; PIN login is unaffected.
+[vars]
+GOOGLE_CLIENT_ID = ""
+VAPID_PUBLIC_KEY = ""
+VAPID_SUBJECT = "https://your-worker.example.workers.dev/"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "racklog"
+database_id = "YOUR_D1_DATABASE_ID"
